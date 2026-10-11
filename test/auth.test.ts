@@ -21,6 +21,13 @@ describe("checkLogin", () => {
     expect(checkLogin(grid, cfg, "blank", "")).toBeNull();
     expect(checkLogin(grid, cfg, "nobody", "0123")).toBeNull();
   });
+  it("blocks users marked inactive", () => {
+    const g = [["Username", "Password", "Active"], ["ravi", "0123", "No"], ["meena", "pw", "Yes"], ["amit", "pw", ""]];
+    const c = { ...cfg, activeHeaders: ["active"] };
+    expect(checkLogin(g, c, "ravi", "0123")).toBeNull();
+    expect(checkLogin(g, c, "meena", "pw")).toBe("meena");
+    expect(checkLogin(g, c, "amit", "pw")).toBe("amit");
+  });
   it("respects the allowlist", () => {
     const only = { ...cfg, allowlist: ["Meena.S"] };
     expect(checkLogin(grid, only, "ravi", "0123")).toBeNull();

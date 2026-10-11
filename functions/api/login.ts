@@ -42,6 +42,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       {
         usernameHeaders: list(env.USERS_USERNAME_HEADER || "username,user name,user id,login"),
         passwordHeaders: list(env.USERS_PASSWORD_HEADER || "password"),
+        activeHeaders: ["active"],
         allowlist: list(env.BOARD_USERS),
       },
       username,

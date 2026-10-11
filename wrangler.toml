@@ -22,8 +22,9 @@ KNOWN_STATUSES = ""                      # the Status dropdown values, comma-sep
 CACHE_SECONDS = "60"
 GOOGLE_CLIENT_EMAIL = "jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com"
 
-# Login — usernames/passwords are read live from your existing users sheet (shared with the service account as Viewer).
-USERS_SHEET_ID = ""                      # the users sheet's ID (the long code in its URL)
+# Login — usernames/passwords are read live from the "Jangad Board Users" sheet (shared with the service account as Viewer).
+# Columns: Username, Password, Full Name, Active (No = blocked), Notes.
+USERS_SHEET_ID = "1R4DuMmUXQlyEEd_cr8I1UhrSQxGyv1WSjEty_yV9Cyc"   # "Jangad Board Users" in Google Drive
 USERS_TAB = ""                           # tab name; empty = first tab
 USERS_USERNAME_HEADER = "username,user name,user id,login"   # accepted header names for the username column
 USERS_PASSWORD_HEADER = "password"       # accepted header names for the password column

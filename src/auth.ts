@@ -8,10 +8,13 @@ export const SESSION_COOKIE = "jb_session";
 export interface UsersConfig {
   usernameHeaders: string[]; // header text that names the username column (case-insensitive)
   passwordHeaders: string[];
+  activeHeaders?: string[]; // optional column; "No" / "N" / "False" / "0" / "Inactive" blocks that user
   allowlist: string[]; // if non-empty, only these usernames may log in
 }
 
 const norm = (v: unknown) => (v == null ? "" : String(v).trim().toLowerCase().replace(/\s+/g, " "));
+
+const INACTIVE = new Set(["no", "n", "false", "0", "inactive", "disabled", "blocked"]);
 
 /** Constant-time string comparison. */
 export function safeEqual(a: string, b: string): boolean {
@@ -23,14 +26,18 @@ export function safeEqual(a: string, b: string): boolean {
 }
 
 /** Locate the header row (first 9 rows) and the username / password columns. */
-export function findUserColumns(grid: Grid, c: UsersConfig): { row: number; user: number; pass: number } | null {
+export function findUserColumns(
+  grid: Grid,
+  c: UsersConfig,
+): { row: number; user: number; pass: number; active: number } | null {
   const uh = c.usernameHeaders.map(norm);
   const ph = c.passwordHeaders.map(norm);
   for (let r = 0; r < Math.min(9, grid.length); r++) {
     const cells = (grid[r] ?? []).map(norm);
     const user = cells.findIndex((h) => uh.includes(h));
     const pass = cells.findIndex((h) => ph.includes(h));
-    if (user >= 0 && pass >= 0) return { row: r, user, pass };
+    const ah = (c.activeHeaders ?? []).map(norm);
+    if (user >= 0 && pass >= 0) return { row: r, user, pass, active: cells.findIndex((h) => ah.includes(h)) };
   }
   return null;
 }
@@ -50,8 +57,9 @@ export function checkLogin(grid: Grid, c: UsersConfig, username: string, passwor
     const row = grid[r] ?? [];
     const u = row[cols.user];
     const p = row[cols.pass] == null ? "" : String(row[cols.pass]);
+    const active = cols.active < 0 || !INACTIVE.has(norm(row[cols.active]));
     // compare every row so timing doesn't reveal which usernames exist
-    if (norm(u) === want && p !== "" && safeEqual(p, password) && found === null) found = String(u).trim();
+    if (norm(u) === want && p !== "" && safeEqual(p, password) && active && found === null) found = String(u).trim();
   }
   return found;
 }
