@@ -21,3 +21,15 @@ CUTOFF_DATE = ""                         # yyyy-mm-dd; orders issued before this
 KNOWN_STATUSES = ""                      # the Status dropdown values, comma-separated; enables the "odd status" check
 CACHE_SECONDS = "60"
 GOOGLE_CLIENT_EMAIL = "jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com"
+
+# Login — usernames/passwords are read live from your existing users sheet (shared with the service account as Viewer).
+USERS_SHEET_ID = ""                      # the users sheet's ID (the long code in its URL)
+USERS_TAB = ""                           # tab name; empty = first tab
+USERS_USERNAME_HEADER = "username,user name,user id,login"   # accepted header names for the username column
+USERS_PASSWORD_HEADER = "password"       # accepted header names for the password column
+BOARD_USERS = ""                         # optional: only these usernames may log in (comma-separated); empty = everyone in the sheet
+SESSION_HOURS = "12"                     # how long a login lasts
+
+# Secrets (dashboard → Settings → Variables and Secrets), never in this file:
+#   GOOGLE_PRIVATE_KEY   the service account's private key
+#   SESSION_SECRET       any long random string; changing it logs everyone out

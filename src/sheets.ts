@@ -76,3 +76,19 @@ export async function readTabs(
   const json = (await res.json()) as { valueRanges?: { values?: Grid }[] };
   return tabs.map((name, i) => ({ name, grid: json.valueRanges?.[i]?.values ?? [] }));
 }
+
+/**
+ * One range as the user sees it (FORMATTED_VALUE), so a password typed as 0123 stays "0123".
+ * `tab` empty = the spreadsheet's first tab.
+ */
+export async function readFormattedTab(sa: ServiceAccount, sheetId: string, tab: string): Promise<Grid> {
+  const token = await getAccessToken(sa);
+  const range = tab ? `'${tab.replace(/'/g, "''")}'` : "A:ZZ";
+  const qs = new URLSearchParams({ valueRenderOption: "FORMATTED_VALUE", majorDimension: "ROWS" });
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}?${qs}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Reading the users sheet failed: ${res.status} ${await res.text()}`);
+  return ((await res.json()) as { values?: Grid }).values ?? [];
+}

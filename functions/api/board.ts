@@ -4,28 +4,12 @@
 
 import { buildBoard, DEFAULT_CONFIG, parseDate, todaySerial, type RulesConfig } from "../../src/rules";
 import { readTabs } from "../../src/sheets";
-
-export interface Env {
-  BOARD_CACHE?: KVNamespace;
-  SHEET_ID: string;
-  TABS: string; // comma-separated
-  STOCK_DUE?: string;
-  BUYER_DUE?: string;
-  WARN2_DAY?: string;
-  FINAL_DAY?: string;
-  RETURN_RECEIVED_CLOSES_ORDER?: string;
-  CUTOFF_DATE?: string; // yyyy-mm-dd, optional
-  KNOWN_STATUSES?: string; // comma-separated Status dropdown values, optional
-  CACHE_SECONDS?: string;
-  GOOGLE_CLIENT_EMAIL: string;
-  GOOGLE_PRIVATE_KEY: string; // secret
-}
+import { list, type Env } from "../../src/env";
 
 const CACHE_KEY = "board:v1";
 
 function config(env: Env): RulesConfig {
   const int = (v: string | undefined, d: number) => (v && /^\d+$/.test(v.trim()) ? +v : d);
-  const list = (v: string | undefined) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   return {
     stockDue: int(env.STOCK_DUE, DEFAULT_CONFIG.stockDue),
     buyerDue: int(env.BUYER_DUE, DEFAULT_CONFIG.buyerDue),
@@ -54,18 +38,21 @@ async function computeBoard(env: Env) {
   };
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+/** The cached payload is shared; the viewer's name is added per request. */
+const withUser = (body: string, user: string) => `{"user":${JSON.stringify(user)},${body.slice(1)}`;
+
+export const onRequestGet: PagesFunction<Env, string, { user: string }> = async ({ request, env, data }) => {
   const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
   try {
     const refresh = new URL(request.url).searchParams.has("refresh");
     if (!refresh && env.BOARD_CACHE) {
       const hit = await env.BOARD_CACHE.get(CACHE_KEY);
-      if (hit) return new Response(hit, { headers: { ...headers, "x-board-cache": "hit" } });
+      if (hit) return new Response(withUser(hit, data.user), { headers: { ...headers, "x-board-cache": "hit" } });
     }
     const body = JSON.stringify(await computeBoard(env));
     const ttl = Math.max(60, Number(env.CACHE_SECONDS) || 60); // KV's minimum TTL is 60s
     if (env.BOARD_CACHE) await env.BOARD_CACHE.put(CACHE_KEY, body, { expirationTtl: ttl });
-    return new Response(body, { headers: { ...headers, "x-board-cache": "miss" } });
+    return new Response(withUser(body, data.user), { headers: { ...headers, "x-board-cache": "miss" } });
   } catch (err) {
     console.error(err);
     return Response.json({ error: String((err as Error).message ?? err) }, { status: 502, headers });

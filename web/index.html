@@ -88,9 +88,11 @@ tr:last-child td { border-bottom: 0; }
     <h1>Jangad Follow-Up Board</h1>
     <div class="meta" id="meta">Loading…</div>
   </div>
-  <div style="display:flex;gap:8px">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="meta" id="who"></span>
     <button id="refresh" title="Re-read the sheet now">↻ Refresh now</button>
-    <button id="theme" title="toggle light / dark">Theme</button>
+    <button id="theme" title="Toggle light / dark">Theme</button>
+    <button id="logout">Log out</button>
   </div>
 </header>
 <div class="wrap">
@@ -145,6 +147,7 @@ async function load(refresh) {
   btn.disabled = true;
   try {
     const res = await fetch("/api/board" + (refresh ? "?refresh=1" : ""), { cache: "no-store" });
+    if (res.status === 401) { location.href = "/login"; return; }
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || res.statusText);
     data = json;
@@ -157,8 +160,12 @@ async function load(refresh) {
   }
 }
 document.getElementById("refresh").onclick = () => load(true);
+document.getElementById("logout").onclick = async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } finally { location.href = "/login"; }
+};
 
 function renderMeta() {
+  document.getElementById("who").textContent = data.user ? "Signed in as " + data.user : "";
   const at = new Date(data.generatedAt);
   const ageMin = Math.round((Date.now() - at) / 60000);
   const el = document.getElementById("meta");
