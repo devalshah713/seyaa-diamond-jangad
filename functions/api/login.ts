@@ -1,9 +1,8 @@
 // POST /api/login {username, password} → sets the session cookie.
 // Credentials are checked against the users sheet on every login; nothing is stored here.
 
-import { checkLogin, SESSION_COOKIE, signSession } from "../../src/auth";
-import { list, type Env } from "../../src/env";
-import { readFormattedTab } from "../../src/sheets";
+import { checkLogin, SESSION_COOKIE, signSession, type Session } from "../../src/auth";
+import { loadUsers, usersConfig, type Env } from "../../src/env";
 
 const MAX_FAILS = 10; // per IP per 15 minutes
 const FAIL_WINDOW_S = 900;
@@ -30,38 +29,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
 
-  let user: string | null;
+  let session: Session | null;
   try {
-    const grid = await readFormattedTab(
-      { clientEmail: env.GOOGLE_CLIENT_EMAIL, privateKey: env.GOOGLE_PRIVATE_KEY },
-      env.USERS_SHEET_ID,
-      env.USERS_TAB ?? "",
-    );
-    user = checkLogin(
-      grid,
-      {
-        usernameHeaders: list(env.USERS_USERNAME_HEADER || "username,user name,user id,login"),
-        passwordHeaders: list(env.USERS_PASSWORD_HEADER || "password"),
-        activeHeaders: ["active"],
-        allowlist: list(env.BOARD_USERS),
-      },
-      username,
-      password,
-    );
+    const { grid } = await loadUsers(env);
+    session = await checkLogin(grid, usersConfig(env), username, password);
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Login is not available right now: " + (err as Error).message }, { status: 502 });
   }
 
-  if (!user) {
+  if (!session) {
     await env.BOARD_CACHE?.put(failKey, String(fails + 1), { expirationTtl: FAIL_WINDOW_S });
     return Response.json({ error: "Wrong username or password." }, { status: 401 });
   }
 
   const hours = Math.max(1, Number(env.SESSION_HOURS) || 12);
-  const token = await signSession(env.SESSION_SECRET, user, Date.now(), hours);
+  const token = await signSession(env.SESSION_SECRET, session, Date.now(), hours);
   return Response.json(
-    { user },
+    session,
     {
       headers: {
         "set-cookie": `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${hours * 3600}`,

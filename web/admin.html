@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jangad Board Admin</title>
+<style>
+:root { --bg: #f6f5f2; --panel: #fff; --ink: #1b1b1f; --muted: #6b6b75; --line: #e3e1dc; --accent: #1d4ed8; --ok: #2f7d4f; --err: #b91c1c; --warn: #b45309; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #111114; --panel: #1a1a1f; --ink: #ececf1; --muted: #9a9aa6; --line: #2c2c34; --accent: #60a5fa; --ok: #4ade80; --err: #f87171; --warn: #fbbf24; }
+}
+:root[data-theme="dark"] { --bg: #111114; --panel: #1a1a1f; --ink: #ececf1; --muted: #9a9aa6; --line: #2c2c34; --accent: #60a5fa; --ok: #4ade80; --err: #f87171; --warn: #fbbf24; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 14px 16px; }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.wrap { padding: 0 16px 32px; max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.muted { color: var(--muted); font-size: 13px; }
+button, input, select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:disabled { opacity: .6; cursor: default; }
+a { color: var(--accent); }
+form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; }
+label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+label input, label select { width: 100%; min-width: 0; }
+.wrap > * { min-width: 0; }
+.msg { min-height: 1.3em; font-size: 13px; }
+.msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+.warn { border-color: var(--warn); color: var(--warn); }
+.table { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+tr:last-child td { border-bottom: 0; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1.5px solid currentColor; }
+.chip.on { color: var(--ok); } .chip.off { color: var(--err); } .chip.admin { color: var(--accent); }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions button { padding: 4px 8px; font-size: 13px; }
+</style>
+<script>try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Admin · Users</h1>
+    <div class="muted" id="who"></div>
+  </div>
+  <div class="actions">
+    <a href="/"><button>← Back to board</button></a>
+    <button id="logout">Log out</button>
+  </div>
+</header>
+<div class="wrap">
+  <div id="colwarn"></div>
+
+  <section class="panel">
+    <h2>Add a user</h2>
+    <form class="grid" id="create" autocomplete="off">
+      <label>Username <input name="username" required pattern="[A-Za-z0-9._\-]{3,32}" title="3–32 letters, numbers, dot, dash or underscore"></label>
+      <label>Full name <input name="fullName"></label>
+      <label>Password <input name="password" type="text" required minlength="8" autocomplete="new-password"></label>
+      <label>Role <select name="role"><option>Staff</option><option>Admin</option></select></label>
+      <label>Notes <input name="notes"></label>
+      <button class="primary">Add user</button>
+    </form>
+    <div class="msg" id="createMsg" role="status"></div>
+    <p class="muted">The password is stored scrambled in the users sheet. Note it down for the person before you leave this page — it can't be shown again, only reset.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Users</h2>
+    <div class="msg" id="listMsg" role="status"></div>
+    <div class="table"><table>
+      <thead><tr><th>Username</th><th>Full name</th><th>Role</th><th>Status</th><th>Password</th><th>Actions</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+</div>
+
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+let me = "";
+
+async function api(method, body) {
+  const res = await fetch("/api/admin/users", {
+    method,
+    headers: body ? { "content-type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (res.status === 401) { location.href = "/login"; throw new Error("Not logged in"); }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || res.statusText);
+  return j;
+}
+
+function say(id, text, ok) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "msg " + (ok ? "ok" : "err");
+}
+
+async function refresh() {
+  try {
+    const j = await api("GET");
+    me = j.me;
+    document.getElementById("who").textContent = "Signed in as " + me;
+    document.getElementById("colwarn").innerHTML = j.missingColumns.length
+      ? `<div class="panel warn">The users sheet is missing these columns: <b>${j.missingColumns.map(esc).join(", ")}</b>. Add them as headers in row 1 to use every feature.</div>`
+      : "";
+    const rows = j.users.map((u) => {
+      const self = u.username.toLowerCase() === me.toLowerCase();
+      return `<tr>
+        <td><b>${esc(u.username)}</b>${self ? ' <span class="muted">(you)</span>' : ""}${u.notes ? `<div class="muted">${esc(u.notes)}</div>` : ""}</td>
+        <td>${esc(u.fullName)}</td>
+        <td>${u.role === "Admin" ? '<span class="chip admin">Admin</span>' : "Staff"}</td>
+        <td>${u.active ? '<span class="chip on">Active</span>' : '<span class="chip off">Inactive</span>'}</td>
+        <td class="muted">${!u.passwordSet ? "not set" : u.passwordHashed ? "secured" : "plain text — reset it"}</td>
+        <td><div class="actions">
+          <button data-act="password" data-u="${esc(u.username)}">Reset password</button>
+          ${self ? "" : `<button data-act="active" data-v="${!u.active}" data-u="${esc(u.username)}">${u.active ? "Deactivate" : "Activate"}</button>`}
+          ${self ? "" : `<button data-act="role" data-v="${u.role === "Admin" ? "Staff" : "Admin"}" data-u="${esc(u.username)}">Make ${u.role === "Admin" ? "Staff" : "Admin"}</button>`}
+        </div></td></tr>`;
+    });
+    document.getElementById("rows").innerHTML = rows.join("") || '<tr><td colspan="6" class="muted">No users yet.</td></tr>';
+  } catch (e) {
+    say("listMsg", e.message, false);
+  }
+}
+
+document.getElementById("create").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector("button");
+  btn.disabled = true;
+  try {
+    const fd = Object.fromEntries(new FormData(f));
+    const j = await api("POST", { action: "create", ...fd });
+    say("createMsg", j.message + " Give them their username and password.", true);
+    f.reset();
+    refresh();
+  } catch (err) {
+    say("createMsg", err.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("rows").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  const username = b.dataset.u;
+  let change;
+  if (b.dataset.act === "password") {
+    const pw = prompt(`New password for ${username} (at least 8 characters):`);
+    if (pw == null) return;
+    change = { password: pw };
+  } else if (b.dataset.act === "active") {
+    const on = b.dataset.v === "true";
+    if (!on && !confirm(`Deactivate ${username}? They won't be able to sign in.`)) return;
+    change = { active: on };
+  } else {
+    if (!confirm(`Make ${username} ${b.dataset.v}?`)) return;
+    change = { role: b.dataset.v };
+  }
+  b.disabled = true;
+  try {
+    const j = await api("POST", { action: "update", username, ...change });
+    say("listMsg", j.message, true);
+    refresh();
+  } catch (err) {
+    say("listMsg", err.message, false);
+    b.disabled = false;
+  }
+});
+
+document.getElementById("logout").onclick = async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } finally { location.href = "/login"; }
+};
+
+refresh();
+</script>
+</body>
+</html>

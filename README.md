@@ -10,7 +10,9 @@ web/index.html            the UI (Pages build output) — buyer band, KPI tiles,
 functions/_middleware.ts  login guard: no valid session cookie → /login (pages) or 401 (API)
 functions/api/login.ts    checks username/password live against the users sheet, sets a signed 12h cookie
 functions/api/board.ts    GET /api/board → JSON, cached 60s in KV, ?refresh=1 bypasses
-src/auth.ts               users-sheet lookup, HMAC session cookie
+functions/api/admin/      admin-only user management (list, add, reset password, activate, role) → writes the users sheet
+src/auth.ts               users-sheet parsing, PBKDF2 password hashes, HMAC session cookie (user + role)
+web/admin.html            admin page (Role = Admin only)
 src/rules.ts              THE LOGIC — pure functions: blocks, working-day clock, stages, closing, exceptions, TAT
 src/sheets.ts             service-account JWT → access token → Sheets values:batchGet (read-only scope)
 test/                     unit tests: §3 worked example, block/closing/exception rules, §4 baseline (needs snapshot)
@@ -38,9 +40,10 @@ Already done: code, `wrangler.toml`, KV namespace `jangad-board-cache`, service 
    Project name `jangad-board` · framework preset *None* · build command *empty* · build output `web` · root directory *empty*.
 3. Settings → Variables and Secrets → add **Secret** `GOOGLE_PRIVATE_KEY` (the `private_key` value from the JSON key),
    then Deployments → latest → *Retry deployment* so it takes effect.
-4. Login: share the users sheet with the service account as Viewer, set `USERS_SHEET_ID` (and `USERS_TAB` /
-   header names if needed) in `wrangler.toml`, and add **Secret** `SESSION_SECRET` (any long random string).
-   Failed logins are limited to 10 per IP per 15 minutes.
+4. Login: create a users sheet with row-1 headers `Username, Password, Full Name, Role, Active, Notes`, add the
+   first admin row by hand (Role `Admin`, Active `Yes`), share it with the service account as **Editor**, set
+   `USERS_SHEET_ID` in `wrangler.toml`, and add **Secret** `SESSION_SECRET` (any long random string).
+   After that, users are managed from `/admin`. Failed logins are limited to 10 per IP per 15 minutes.
 5. Verify against SPEC §4 (`npm run snapshot` then `npm test`, or compare the KPI tiles on 11 Oct 2026).
 
 ## Configuration (`wrangler.toml` `[vars]`)

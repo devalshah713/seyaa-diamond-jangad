@@ -27,3 +27,31 @@ export interface Env {
 
 export const list = (v: string | undefined) =>
   (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+// ---------------------------------------------------------------- users sheet helpers
+
+import { parseUsers, type UsersConfig } from "./auth";
+import { readFormattedTab, type ServiceAccount } from "./sheets";
+
+export const serviceAccount = (env: Env): ServiceAccount => ({
+  clientEmail: env.GOOGLE_CLIENT_EMAIL,
+  privateKey: env.GOOGLE_PRIVATE_KEY,
+});
+
+export const usersConfig = (env: Env): UsersConfig => ({
+  usernameHeaders: list(env.USERS_USERNAME_HEADER || "username,user name,user id,login"),
+  passwordHeaders: list(env.USERS_PASSWORD_HEADER || "password"),
+  allowlist: list(env.BOARD_USERS),
+});
+
+/** Fresh read of the users sheet. */
+export async function loadUsers(env: Env) {
+  const grid = await readFormattedTab(serviceAccount(env), env.USERS_SHEET_ID, env.USERS_TAB ?? "");
+  return { grid, ...parseUsers(grid, usersConfig(env)) };
+}
+
+/** Data the login middleware attaches to every authenticated request. */
+export interface SessionData extends Record<string, unknown> {
+  user: string;
+  role: "Admin" | "Staff";
+}

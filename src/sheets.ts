@@ -3,7 +3,10 @@
 
 import type { Grid } from "./rules";
 
-const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+export const READ_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+// Used only for the users sheet. The service account has Viewer on the Jangad sheet,
+// so even this scope cannot write there.
+export const WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export interface ServiceAccount {
@@ -11,7 +14,7 @@ export interface ServiceAccount {
   privateKey: string; // PEM, "-----BEGIN PRIVATE KEY-----…"; literal "\n" sequences are accepted
 }
 
-let cachedToken: { token: string; expires: number; email: string } | null = null;
+const tokenCache = new Map<string, { token: string; expires: number }>();
 
 function b64url(data: ArrayBuffer | Uint8Array | string): string {
   const bytes =
@@ -30,14 +33,14 @@ async function importKey(pem: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
 }
 
-export async function getAccessToken(sa: ServiceAccount): Promise<string> {
+export async function getAccessToken(sa: ServiceAccount, scope = READ_SCOPE): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  if (cachedToken && cachedToken.email === sa.clientEmail && cachedToken.expires > now + 60) {
-    return cachedToken.token;
-  }
+  const cacheKey = `${sa.clientEmail} ${scope}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expires > now + 60) return cached.token;
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = b64url(
-    JSON.stringify({ iss: sa.clientEmail, scope: SCOPE, aud: TOKEN_URL, iat: now, exp: now + 3600 }),
+    JSON.stringify({ iss: sa.clientEmail, scope, aud: TOKEN_URL, iat: now, exp: now + 3600 }),
   );
   const key = await importKey(sa.privateKey);
   const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claims}`));
@@ -51,7 +54,7 @@ export async function getAccessToken(sa: ServiceAccount): Promise<string> {
   });
   if (!res.ok) throw new Error(`Google token exchange failed: ${res.status} ${await res.text()}`);
   const json = (await res.json()) as { access_token: string; expires_in: number };
-  cachedToken = { token: json.access_token, expires: now + json.expires_in, email: sa.clientEmail };
+  tokenCache.set(cacheKey, { token: json.access_token, expires: now + json.expires_in });
   return json.access_token;
 }
 
@@ -91,4 +94,45 @@ export async function readFormattedTab(sa: ServiceAccount, sheetId: string, tab:
   );
   if (!res.ok) throw new Error(`Reading the users sheet failed: ${res.status} ${await res.text()}`);
   return ((await res.json()) as { values?: Grid }).values ?? [];
+}
+
+const tabPrefix = (tab: string) => (tab ? `'${tab.replace(/'/g, "''")}'!` : "");
+
+/** Append one row after the last row of the table. RAW keeps "0123" and "pbkdf2$…" exactly as given. */
+export async function appendRow(sa: ServiceAccount, sheetId: string, tab: string, row: string[]): Promise<void> {
+  const token = await getAccessToken(sa, WRITE_SCOPE);
+  const range = encodeURIComponent(`${tabPrefix(tab)}A1`);
+  const qs = new URLSearchParams({ valueInputOption: "RAW", insertDataOption: "INSERT_ROWS" });
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${range}:append?${qs}`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ values: [row] }),
+    },
+  );
+  if (!res.ok) throw new Error(`Saving the new user failed: ${res.status} ${await res.text()}`);
+}
+
+/** Overwrite individual cells, e.g. [{ cell: "B7", value: "pbkdf2$…" }]. */
+export async function updateCells(
+  sa: ServiceAccount,
+  sheetId: string,
+  tab: string,
+  cells: { cell: string; value: string }[],
+): Promise<void> {
+  if (!cells.length) return;
+  const token = await getAccessToken(sa, WRITE_SCOPE);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values:batchUpdate`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        valueInputOption: "RAW",
+        data: cells.map((c) => ({ range: `${tabPrefix(tab)}${c.cell}`, values: [[c.value]] })),
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Updating the user failed: ${res.status} ${await res.text()}`);
 }

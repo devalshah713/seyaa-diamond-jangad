@@ -92,6 +92,7 @@ tr:last-child td { border-bottom: 0; }
     <span class="meta" id="who"></span>
     <button id="refresh" title="Re-read the sheet now">↻ Refresh now</button>
     <button id="theme" title="Toggle light / dark">Theme</button>
+    <a href="/admin" id="adminLink" hidden><button>Admin</button></a>
     <button id="logout">Log out</button>
   </div>
 </header>
@@ -166,6 +167,7 @@ document.getElementById("logout").onclick = async () => {
 
 function renderMeta() {
   document.getElementById("who").textContent = data.user ? "Signed in as " + data.user : "";
+  document.getElementById("adminLink").hidden = data.role !== "Admin";
   const at = new Date(data.generatedAt);
   const ageMin = Math.round((Date.now() - at) / 60000);
   const el = document.getElementById("meta");
