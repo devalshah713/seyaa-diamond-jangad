@@ -1,48 +1,45 @@
 # Jangad Follow-Up Board
 
 Read-only audit board over the **Diamond Issue Jangad From Office** Google Sheet: which karigar orders
-are late, by how much, and at which factory. Runs as a Cloudflare Worker. Full requirements: [SPEC.md](SPEC.md).
+are late, by how much, and at which factory. Runs on **Cloudflare Pages** (static UI + one Pages Function).
+Full requirements: [SPEC.md](SPEC.md).
 
 ```
-worker/src/rules.ts     THE LOGIC — pure functions: blocks, working-day clock, stages, closing, exceptions, TAT
-worker/src/sheets.ts    service-account JWT → access token → Sheets values:batchGet (read-only scope)
-worker/src/index.ts     GET /api/board (JSON, cached 60s in KV, ?refresh=1 bypasses) · everything else → /web
-worker/test/            unit tests: §3 worked example, block/closing/exception rules, §4 baseline (needs snapshot)
-web/index.html          the UI — buyer band, KPI tiles, Follow-Up Today, Action Queue, Scorecard, Carats at Risk, Exceptions
-apps-script/            the Apps Script reference implementation (to be added)
+web/index.html            the UI (Pages build output) — buyer band, KPI tiles, Follow-Up Today, Action Queue,
+                          Factory Scorecard, Carats at Risk, Exceptions
+functions/api/board.ts    Pages Function: GET /api/board → JSON, cached 60s in KV, ?refresh=1 bypasses
+src/rules.ts              THE LOGIC — pure functions: blocks, working-day clock, stages, closing, exceptions, TAT
+src/sheets.ts             service-account JWT → access token → Sheets values:batchGet (read-only scope)
+test/                     unit tests: §3 worked example, block/closing/exception rules, §4 baseline (needs snapshot)
+wrangler.toml             Pages config: vars + KV binding (source of truth; the dashboard reads it on each build)
+apps-script/              the Apps Script reference implementation (to be added)
 ```
 
 ## Develop
 
 ```sh
-cd worker
 npm install
-npm test             # rules unit tests
+npm test                       # rules unit tests
 npm run typecheck
-cp .dev.vars.example .dev.vars   # fill in the service account
-npm run dev          # http://localhost:8787
+cp .dev.vars.example .dev.vars # fill in the private key
+npm run dev                    # http://localhost:8788
 ```
 
-## Go live — checklist
+## Go live on Cloudflare Pages
 
-Already done: Worker code, config, KV namespace `jangad-board-cache` (id in `wrangler.toml`).
+Already done: code, `wrangler.toml`, KV namespace `jangad-board-cache`, service account
+`jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com`.
 
-1. **Google service account** (Google Cloud Console, any project you own)
-   - IAM & Admin → Service Accounts → *Create* (e.g. `jangad-board`). No roles needed.
-   - Keys → *Add key* → JSON. Keep the file private; never commit it.
-   - APIs & Services → enable **Google Sheets API**.
-2. **Share the sheet** with the service account's email as **Viewer** (from `seyaalabjewel@gmail.com`).
-3. **Configure the Worker**
-   - Put the service-account email in `GOOGLE_CLIENT_EMAIL` in `worker/wrangler.toml`.
-   - `npx wrangler secret put GOOGLE_PRIVATE_KEY` and paste the `private_key` value from the JSON key.
-4. **Deploy**: `cd worker && npx wrangler login && npm run deploy` (or set `CLOUDFLARE_API_TOKEN`).
-   The board is then at `https://jangad-board.<your-subdomain>.workers.dev`.
-5. **Lock it down**: Cloudflare Zero Trust → Access → Applications → *Add* → Self-hosted, domain =
-   the Worker URL, policy *Allow* → *Emails* = the staff list. Until this is done, anyone with the URL can see the board.
-6. **Verify against §4**: `npm run snapshot` writes `test/fixtures/sheet-<date>.json`; with the
-   11 Oct 2026 snapshot, `npm test` runs the baseline suite (379 open, 13,609.6 cts, …).
+1. Share the sheet with the service-account email as **Viewer**.
+2. Cloudflare → Workers & Pages → Create → **Pages** → Connect to Git → this repo.
+   Project name `jangad-board` · framework preset *None* · build command *empty* · build output `web` · root directory *empty*.
+3. Settings → Variables and Secrets → add **Secret** `GOOGLE_PRIVATE_KEY` (the `private_key` value from the JSON key),
+   then Deployments → latest → *Retry deployment* so it takes effect.
+4. Zero Trust → Access → Applications → Self-hosted for `jangad-board.pages.dev` (and `*.jangad-board.pages.dev`),
+   policy *Allow* → *Emails* = the staff list.
+5. Verify against SPEC §4 (`npm run snapshot` then `npm test`, or compare the KPI tiles on 11 Oct 2026).
 
-## Configuration (`worker/wrangler.toml` `[vars]`)
+## Configuration (`wrangler.toml` `[vars]`)
 
 | Var | Default | |
 |---|---|---|

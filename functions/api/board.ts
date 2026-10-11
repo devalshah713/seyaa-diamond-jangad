@@ -1,11 +1,11 @@
-// Routes: GET /api/board (JSON), everything else → static UI in /web.
-// Read-only: this Worker never writes to the sheet.
+// Pages Function: GET /api/board → the computed board as JSON.
+// Everything else on the site is the static UI in /web.
+// Read-only: this never writes to the sheet.
 
-import { buildBoard, DEFAULT_CONFIG, parseDate, todaySerial, type RulesConfig } from "./rules";
-import { readTabs } from "./sheets";
+import { buildBoard, DEFAULT_CONFIG, parseDate, todaySerial, type RulesConfig } from "../../src/rules";
+import { readTabs } from "../../src/sheets";
 
 export interface Env {
-  ASSETS: Fetcher;
   BOARD_CACHE?: KVNamespace;
   SHEET_ID: string;
   TABS: string; // comma-separated
@@ -38,6 +38,7 @@ function config(env: Env): RulesConfig {
 }
 
 async function computeBoard(env: Env) {
+  if (!env.GOOGLE_PRIVATE_KEY) throw new Error("GOOGLE_PRIVATE_KEY secret is not set on this Pages project.");
   const tabs = env.TABS.split(",").map((s) => s.trim()).filter(Boolean);
   const grids = await readTabs(
     { clientEmail: env.GOOGLE_CLIENT_EMAIL, privateKey: env.GOOGLE_PRIVATE_KEY },
@@ -53,31 +54,20 @@ async function computeBoard(env: Env) {
   };
 }
 
-async function boardResponse(env: Env, refresh: boolean): Promise<Response> {
-  const ttl = Math.max(60, Number(env.CACHE_SECONDS) || 60); // KV's minimum TTL is 60s
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
-
-  if (!refresh && env.BOARD_CACHE) {
-    const hit = await env.BOARD_CACHE.get(CACHE_KEY);
-    if (hit) return new Response(hit, { headers: { ...headers, "x-board-cache": "hit" } });
-  }
-  const body = JSON.stringify(await computeBoard(env));
-  if (env.BOARD_CACHE) await env.BOARD_CACHE.put(CACHE_KEY, body, { expirationTtl: ttl });
-  return new Response(body, { headers: { ...headers, "x-board-cache": "miss" } });
-}
-
-export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
-    if (url.pathname === "/api/board") {
-      if (req.method !== "GET") return new Response("Method not allowed", { status: 405 });
-      try {
-        return await boardResponse(env, url.searchParams.has("refresh"));
-      } catch (err) {
-        console.error(err);
-        return Response.json({ error: String((err as Error).message ?? err) }, { status: 502 });
-      }
+  try {
+    const refresh = new URL(request.url).searchParams.has("refresh");
+    if (!refresh && env.BOARD_CACHE) {
+      const hit = await env.BOARD_CACHE.get(CACHE_KEY);
+      if (hit) return new Response(hit, { headers: { ...headers, "x-board-cache": "hit" } });
     }
-    return env.ASSETS.fetch(req);
-  },
-} satisfies ExportedHandler<Env>;
+    const body = JSON.stringify(await computeBoard(env));
+    const ttl = Math.max(60, Number(env.CACHE_SECONDS) || 60); // KV's minimum TTL is 60s
+    if (env.BOARD_CACHE) await env.BOARD_CACHE.put(CACHE_KEY, body, { expirationTtl: ttl });
+    return new Response(body, { headers: { ...headers, "x-board-cache": "miss" } });
+  } catch (err) {
+    console.error(err);
+    return Response.json({ error: String((err as Error).message ?? err) }, { status: 502, headers });
+  }
+};

@@ -1,18 +1,13 @@
+# Cloudflare Pages project. The dashboard reads this file on every build:
+# vars and the KV binding below are the source of truth (edit here, not in the dashboard).
+# The one secret, GOOGLE_PRIVATE_KEY, is set in the dashboard: Settings → Variables and Secrets.
 name = "jangad-board"
-main = "src/index.ts"
+pages_build_output_dir = "web"
 compatibility_date = "2025-09-01"
-
-# The UI. /api/board falls through to the Worker because no file matches it.
-[assets]
-directory = "../web"
-binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "BOARD_CACHE"
 id = "512b15e70a9d4e3495790c709abdc832"
-
-[observability]
-enabled = true
 
 [vars]
 SHEET_ID = "1IhNZlP3YxM8lVTboyxB2EeJkReGN86ONSHi-buNkE3I"
@@ -26,5 +21,3 @@ CUTOFF_DATE = ""                         # yyyy-mm-dd; orders issued before this
 KNOWN_STATUSES = ""                      # the Status dropdown values, comma-separated; enables the "odd status" check
 CACHE_SECONDS = "60"
 GOOGLE_CLIENT_EMAIL = "jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com"
-
-# Secret, never committed:  npx wrangler secret put GOOGLE_PRIVATE_KEY
