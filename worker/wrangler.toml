@@ -25,6 +25,6 @@ RETURN_RECEIVED_CLOSES_ORDER = "true"   # SPEC §3 open decision
 CUTOFF_DATE = ""                         # yyyy-mm-dd; orders issued before this are ignored
 KNOWN_STATUSES = ""                      # the Status dropdown values, comma-separated; enables the "odd status" check
 CACHE_SECONDS = "60"
-GOOGLE_CLIENT_EMAIL = ""                 # service-account email, e.g. jangad-board@<project>.iam.gserviceaccount.com
+GOOGLE_CLIENT_EMAIL = "jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com"
 
 # Secret, never committed:  npx wrangler secret put GOOGLE_PRIVATE_KEY
