@@ -1,0 +1,30 @@
+name = "jangad-board"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# The UI. /api/board falls through to the Worker because no file matches it.
+[assets]
+directory = "../web"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "BOARD_CACHE"
+id = "512b15e70a9d4e3495790c709abdc832"
+
+[observability]
+enabled = true
+
+[vars]
+SHEET_ID = "1IhNZlP3YxM8lVTboyxB2EeJkReGN86ONSHi-buNkE3I"
+TABS = "Seyaa Solitaire,PRATIK C-6,RAKESH BABU,RAJKUMAR,Anthem Jewels"
+STOCK_DUE = "8"
+BUYER_DUE = "5"
+WARN2_DAY = "10"
+FINAL_DAY = "12"
+RETURN_RECEIVED_CLOSES_ORDER = "true"   # SPEC §3 open decision
+CUTOFF_DATE = ""                         # yyyy-mm-dd; orders issued before this are ignored
+KNOWN_STATUSES = ""                      # the Status dropdown values, comma-separated; enables the "odd status" check
+CACHE_SECONDS = "60"
+GOOGLE_CLIENT_EMAIL = ""                 # service-account email, e.g. jangad-board@<project>.iam.gserviceaccount.com
+
+# Secret, never committed:  npx wrangler secret put GOOGLE_PRIVATE_KEY

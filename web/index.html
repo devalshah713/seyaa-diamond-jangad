@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jangad Follow-Up Board</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1b1b1f; --muted: #6b6b75; --line: #e3e1dc;
+  --band: #16161a; --band-ink: #f4f4f6;
+  --ok: #2f7d4f; --w1: #b98900; --w2: #d26a00; --final: #c2410c; --breach: #b91c1c; --due: #7c3aed; --crit: #9d174d;
+  --chip-ink: #fff; --accent: #1d4ed8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111114; --panel: #1a1a1f; --ink: #ececf1; --muted: #9a9aa6; --line: #2c2c34;
+    --band: #000; --band-ink: #f4f4f6;
+    --ok: #4ade80; --w1: #facc15; --w2: #fb923c; --final: #f97316; --breach: #f87171; --due: #a78bfa; --crit: #f472b6;
+    --chip-ink: #111; --accent: #60a5fa;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111114; --panel: #1a1a1f; --ink: #ececf1; --muted: #9a9aa6; --line: #2c2c34;
+  --band: #000; --band-ink: #f4f4f6;
+  --ok: #4ade80; --w1: #facc15; --w2: #fb923c; --final: #f97316; --breach: #f87171; --due: #a78bfa; --crit: #f472b6;
+  --chip-ink: #111; --accent: #60a5fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 14px 16px; }
+h1 { font-size: 18px; margin: 0; }
+.meta { color: var(--muted); font-size: 13px; }
+.meta.stale { color: var(--breach); font-weight: 600; }
+button, select, input { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--muted); }
+.wrap { padding: 0 16px 32px; max-width: 1280px; margin: 0 auto; }
+
+.band { background: var(--band); color: var(--band-ink); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; position: sticky; top: 0; z-index: 5; max-height: min(30vh, 220px); overflow-y: auto; }
+.band h2 { font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.band ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.band li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.band .none { opacity: .7; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; border-top: 4px solid var(--c, var(--line)); }
+.kpi .n { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.kpi .c { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+nav.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+nav.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 8px 12px; white-space: nowrap; color: var(--muted); }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--panel); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+.day { font-weight: 700; font-variant-numeric: tabular-nums; border-left: 5px solid var(--c, var(--line)); padding-left: 8px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1.5px solid var(--c); color: var(--c); white-space: nowrap; }
+.chip.solid { background: var(--c); color: var(--chip-ink); }
+.tier-buyer { font-weight: 700; }
+.small { color: var(--muted); font-size: 12px; }
+.empty { padding: 24px; text-align: center; color: var(--muted); }
+.err { background: color-mix(in srgb, var(--breach) 12%, var(--panel)); border: 1px solid var(--breach); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+
+.bars { display: grid; gap: 12px; padding: 14px; }
+.bar-row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 10px; align-items: center; }
+.bar { display: flex; height: 22px; border-radius: 5px; overflow: hidden; background: var(--line); }
+.bar span { background: var(--c); height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 14px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 5px; vertical-align: -1px; }
+
+.exgrid { display: grid; gap: 14px; }
+.exgrid h3 { margin: 0; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
+@media (max-width: 640px) {
+  .bar-row { grid-template-columns: 90px 1fr 70px; }
+  .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Jangad Follow-Up Board</h1>
+    <div class="meta" id="meta">Loading…</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button id="refresh" title="Re-read the sheet now">↻ Refresh now</button>
+    <button id="theme" title="toggle light / dark">Theme</button>
+  </div>
+</header>
+<div class="wrap">
+  <div id="error"></div>
+  <section class="band" id="band" aria-label="Buyer orders due"></section>
+  <section class="kpis" id="kpis"></section>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <main id="view"></main>
+</div>
+
+<script>
+const STAGE_VAR = {
+  "On Track": "--ok", "Warning 1": "--w1", "Warning 2": "--w2", "Final Warning": "--final",
+  "Breach": "--breach", "Due Today": "--due", "Critical": "--crit",
+};
+const STAGE_ORDER = ["Critical", "Due Today", "Breach", "Final Warning", "Warning 2", "Warning 1", "On Track"];
+const SOLID = new Set(["Breach", "Critical"]);
+const TABS = [
+  ["follow", "Follow-Up Today"], ["queue", "Action Queue"], ["score", "Factory Scorecard"],
+  ["risk", "Carats at Risk"], ["ex", "Exceptions"],
+];
+let data = null;
+let tab = safeGet("tab") || "follow";
+const q = { factory: "", tier: "", stage: "", search: "" };
+
+function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const cts = (n) => (n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const fmtDate = (iso) => iso ? new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }) : "";
+const cv = (stage) => `var(${STAGE_VAR[stage]})`;
+const chip = (stage) => `<span class="chip${SOLID.has(stage) ? " solid" : ""}" style="--c:${cv(stage)}">${esc(stage)}</span>`;
+const dayCell = (o) => `<td class="num"><span class="day" style="--c:${cv(o.stage)}">${o.day}</span></td>`;
+
+// ---- theme
+(function () {
+  const t = safeGet("theme");
+  if (t) document.documentElement.dataset.theme = t;
+  document.getElementById("theme").onclick = () => {
+    const dark = document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = dark ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    safeSet("theme", next);
+  };
+})();
+
+// ---- data
+async function load(refresh) {
+  const btn = document.getElementById("refresh");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/board" + (refresh ? "?refresh=1" : ""), { cache: "no-store" });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || res.statusText);
+    data = json;
+    document.getElementById("error").innerHTML = "";
+    render();
+  } catch (e) {
+    document.getElementById("error").innerHTML = `<div class="err"><b>Could not load the board.</b> ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById("refresh").onclick = () => load(true);
+
+function renderMeta() {
+  const at = new Date(data.generatedAt);
+  const ageMin = Math.round((Date.now() - at) / 60000);
+  const el = document.getElementById("meta");
+  el.textContent = `Sheet read ${at.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST` +
+    ` · ${ageMin <= 0 ? "just now" : ageMin + " min ago"} · today ${fmtDate(data.today)}` +
+    (data.config.cutoffDate ? ` · ignoring orders before ${fmtDate(data.config.cutoffDate)}` : "");
+  el.className = "meta" + (ageMin > 10 ? " stale" : "");
+}
+setInterval(() => data && renderMeta(), 30000);
+
+function render() {
+  renderMeta();
+  // buyer band — buyer orders at or past the due day
+  const due = data.orders.filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
+  document.getElementById("band").innerHTML = `<h2>Buyer orders due · ${due.length}</h2>` + (due.length
+    ? `<ul>${due.map((o) => `<li>${chip(o.stage)} <b>${esc(o.design)}</b> <span>${esc(o.buyer)}</span> <span>${esc(o.factory)}</span> <span>day ${o.day}</span> <span>${cts(o.carats)} cts</span></li>`).join("")}</ul>`
+    : `<div class="none">None at or past day ${data.config.buyerDue}.</div>`);
+
+  // KPIs
+  const s = data.totals.byStage;
+  const sum = (...ks) => ks.reduce((a, k) => ({ count: a.count + s[k].count, carats: a.carats + s[k].carats }), { count: 0, carats: 0 });
+  const tiles = [
+    ["Open", { count: data.totals.open, carats: data.totals.carats }, "--accent"],
+    ["On Track", sum("On Track"), "--ok"],
+    ["Warning 1", sum("Warning 1"), "--w1"],
+    ["Warning 2 + Final", sum("Warning 2", "Final Warning"), "--final"],
+    ["Breached", sum("Breach", "Critical"), "--breach"],
+    ["Due Today (buyer)", sum("Due Today"), "--due"],
+  ];
+  document.getElementById("kpis").innerHTML = tiles.map(([l, v, c]) =>
+    `<div class="kpi" style="--c:var(${c})"><div class="l">${l}</div><div class="n">${v.count}</div><div class="c">${cts(v.carats)} cts</div></div>`).join("");
+
+  document.getElementById("tabs").innerHTML = TABS.map(([k, l]) =>
+    `<button role="tab" aria-selected="${k === tab}" data-k="${k}">${l}</button>`).join("");
+  document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.k; safeSet("tab", tab); render(); });
+
+  const v = document.getElementById("view");
+  v.innerHTML = { follow: viewFollow, queue: viewQueue, score: viewScore, risk: viewRisk, ex: viewEx }[tab]();
+  if (tab === "queue") bindFilters();
+}
+
+function orderTable(rows, withAction) {
+  if (!rows.length) return `<div class="panel"><div class="empty">Nothing here.</div></div>`;
+  return `<div class="panel"><table><thead><tr>
+    <th class="num">Day</th><th>Stage</th>${withAction ? "<th>Action</th>" : ""}<th>Design</th><th>Factory</th>
+    <th>Priority</th><th class="hide-sm">Issued</th><th class="num">Cts</th><th class="num hide-sm">Pcs</th><th class="hide-sm">Memo</th>
+  </tr></thead><tbody>${rows.map((o) => `<tr>
+    ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}</td>
+    <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>
+    <td class="${o.tier === "Buyer" ? "tier-buyer" : ""}">${o.tier === "Buyer" ? "Buyer · " + esc(o.buyer) : "Stock"}</td>
+    <td class="hide-sm">${fmtDate(o.issueDate)}</td><td class="num">${cts(o.carats)}</td><td class="num hide-sm">${o.pcs}</td><td class="hide-sm">${esc(o.memo)}</td>
+  </tr>`).join("")}</tbody></table></div>`;
+}
+
+function viewFollow() {
+  const rows = data.orders.filter((o) => o.stage !== "On Track");
+  return `<p class="small">${rows.length} orders at or past a warning step — buyer orders first, then longest overdue.</p>` + orderTable(rows, true);
+}
+
+function viewQueue() {
+  const opt = (vals, cur, all) => `<option value="">${all}</option>` + vals.map((x) => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
+  const s = q.search.trim().toLowerCase();
+  const rows = data.orders.filter((o) =>
+    (!q.factory || o.factory === q.factory) && (!q.tier || o.tier === q.tier) && (!q.stage || o.stage === q.stage) &&
+    (!s || o.design.toLowerCase().includes(s) || o.sub.toLowerCase().includes(s)));
+  return `<div class="filters">
+    <select id="f-factory">${opt(data.factories.map((f) => f.factory), q.factory, "All factories")}</select>
+    <select id="f-tier">${opt(["Buyer", "Stock"], q.tier, "All priorities")}</select>
+    <select id="f-stage">${opt(STAGE_ORDER, q.stage, "All stages")}</select>
+    <input id="f-search" type="search" placeholder="Search design number" value="${esc(q.search)}">
+    <span class="small" style="align-self:center">${rows.length} of ${data.orders.length}</span>
+  </div>` + orderTable(rows, false);
+}
+function bindFilters() {
+  const on = (id, k, ev = "change") => {
+    const el = document.getElementById(id);
+    el.addEventListener(ev, () => {
+      q[k] = el.value; render();
+      if (ev === "input") { const n = document.getElementById(id); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+    });
+  };
+  on("f-factory", "factory"); on("f-tier", "tier"); on("f-stage", "stage"); on("f-search", "search", "input");
+}
+
+function viewScore() {
+  const target = data.config.stockDue;
+  return `<p class="small">Actual turnaround on closed orders, in working days (issue → received), against the ${target}-day target.
+    Mean and median both shown: never-closed rows drag the mean.</p>
+  <div class="panel"><table><thead><tr>
+    <th>Factory</th><th class="num">Closed (n)</th><th class="num">Mean TAT</th><th class="num">Median TAT</th>
+    <th class="num">Open</th><th class="num">Breached</th><th class="num">Carats out</th>
+  </tr></thead><tbody>${data.factories.map((f) => {
+    const bad = (x) => x != null && x > target ? ` style="color:var(--breach);font-weight:700"` : "";
+    return `<tr><td><b>${esc(f.factory)}</b></td><td class="num">${f.tat.n}</td>
+      <td class="num"${bad(f.tat.mean)}>${f.tat.mean ?? "—"}</td><td class="num"${bad(f.tat.median)}>${f.tat.median ?? "—"}</td>
+      <td class="num">${f.open}</td><td class="num">${f.breached}</td><td class="num">${cts(f.carats)}</td></tr>`;
+  }).join("")}</tbody></table></div>`;
+}
+
+function viewRisk() {
+  const max = Math.max(1, ...data.factories.map((f) => f.carats));
+  return `<p class="small">Open carats by factory, split by stage.</p><div class="panel"><div class="bars">${data.factories.map((f) => `
+    <div class="bar-row"><b>${esc(f.factory)}</b>
+      <div class="bar" style="width:${Math.max(2, (f.carats / max) * 100)}%">${STAGE_ORDER.filter((s) => f.byStage[s].carats > 0).map((s) =>
+        `<span title="${s}: ${cts(f.byStage[s].carats)} cts · ${f.byStage[s].count} orders" style="--c:${cv(s)};width:${(f.byStage[s].carats / f.carats) * 100}%"></span>`).join("")}</div>
+      <span class="num">${cts(f.carats)} cts</span></div>`).join("")}
+  </div><div class="legend">${STAGE_ORDER.map((s) => `<span><i style="--c:${cv(s)}"></i>${s}</span>`).join("")}</div></div>`;
+}
+
+function viewEx() {
+  const e = data.exceptions;
+  const box = (title, note, items) => `<div class="panel"><h3>${title} · ${items.length}</h3>
+    <p class="small" style="padding:0 12px">${note}</p>${items.length ? `<table><thead><tr><th>Factory</th><th class="num">Row</th><th>Design</th><th>Detail</th></tr></thead><tbody>
+    ${items.map((x) => `<tr><td>${esc(x.factory)}</td><td class="num">${x.row}</td><td>${esc(x.design)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">None.</div>`}</div>`;
+  return `<div class="exgrid">
+    ${box("Likely received", "Received date is filled but no row carries a Received status. Excluded from the open list — fix the status in the sheet.", e.likelyReceived)}
+    ${box("No issue date", "No usable date on the block, so no clock can run. Excluded from the open list.", e.noDate)}
+    ${box("Odd status", data.config.knownStatuses.length ? "Status value outside the dropdown." : "Check disabled — set KNOWN_STATUSES to the dropdown values.", e.oddStatus)}
+    ${e.beforeCutoff ? `<p class="small">${e.beforeCutoff} open orders issued before the cut-off are hidden.</p>` : ""}
+  </div>`;
+}
+
+load(false);
+</script>
+</body>
+</html>
