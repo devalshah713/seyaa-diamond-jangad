@@ -252,7 +252,7 @@ describe("add-ons belong to the original order", () => {
     expect(board.orders.map((o) => o.design).sort()).toEqual(["SN-OTHER-001", "SN-RG-SL-EM-014"]);
     const main = board.orders.find((o) => o.design === "SN-RG-SL-EM-014")!;
     expect(main).toMatchObject({ issueDate: "2026-10-01", pcs: 16, carats: 2.25, day: workingDayNumber(d("2026-10-01"), today) });
-    expect(main.addOns).toEqual(["SN-RG-SL-EM-014 ADD-ON (row 4, issued 2026-10-08)"]);
+    expect(main.addOns).toEqual([{ design: "SN-RG-SL-EM-014 ADD-ON", sub: "", product: "", row: 4, issueDate: "2026-10-08" }]);
   });
 
   it("an add-on marked Received closes the whole order", () => {

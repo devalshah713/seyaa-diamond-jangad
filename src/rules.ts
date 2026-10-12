@@ -249,7 +249,7 @@ export interface Block {
   statuses: { row: number; value: string }[];
   pcs: number;
   carats: number;
-  addOns: { row: number; design: string; issue: number | null }[]; // add-on blocks merged into this order
+  addOns: { row: number; design: string; sub: string; product: string; issue: number | null }[]; // add-on blocks merged into this order
 }
 
 /** One order = one design block: a row with a Design Number plus every following row without one. */
@@ -340,7 +340,7 @@ export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[
       orphans.push(b);
       continue;
     }
-    main.addOns.push({ row: b.row, design: b.design, issue: b.issue });
+    main.addOns.push({ row: b.row, design: b.design, sub: b.sub, product: b.product, issue: b.issue });
     main.rowCount += b.rowCount;
     main.pcs += b.pcs;
     main.carats += b.carats;
@@ -353,6 +353,14 @@ export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[
 }
 
 // ---------------------------------------------------------------- the board
+
+export interface AddOn {
+  design: string;
+  sub: string;
+  product: string;
+  row: number;
+  issueDate: string | null;
+}
 
 export interface Order {
   factory: string;
@@ -370,7 +378,7 @@ export interface Order {
   pcs: number;
   carats: number;
   statuses: string[];
-  addOns: string[]; // e.g. "SN-RG-SL-EM-014 ADD-ON (row 4400, issued 2026-10-03)"
+  addOns: AddOn[]; // add-on diamonds issued later for this same order, shown under it
 }
 
 export interface ExceptionItem {
@@ -511,7 +519,13 @@ export function buildBoard(
         pcs: b.pcs,
         carats: Math.round(b.carats * 1000) / 1000,
         statuses: b.statuses.map((s) => s.value),
-        addOns: b.addOns.map((a) => `${a.design} (row ${a.row}${a.issue !== null ? ", issued " + serialToISO(a.issue) : ""})`),
+        addOns: b.addOns.map((a) => ({
+          design: a.design,
+          sub: a.sub,
+          product: a.product,
+          row: a.row,
+          issueDate: a.issue !== null ? serialToISO(a.issue) : null,
+        })),
       });
       fs.open++;
       fs.carats += b.carats;

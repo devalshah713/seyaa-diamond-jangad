@@ -100,6 +100,7 @@ tr.picked td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .selbar .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .selbar button { background: transparent; color: var(--band-ink); border-color: rgb(255 255 255 / .35); }
 .selbar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.addon { margin-top: 4px; padding: 3px 8px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 0 6px 6px 0; font-size: 13px; }
 .msg-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .msg-btns button, .msg-btns a { font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
 .msg-btns button.done { border-color: var(--ok); color: var(--ok); }
@@ -488,18 +489,22 @@ function loadXlsx() {
 }
 const toDate = (iso) => new Date(iso + "T00:00:00Z");
 /** Add-on design numbers merged into this order, e.g. "SN-RG-SL-EM-014 ADD-ON". */
-const addOnNames = (o) => (o.addOns || []).map((a) => a.replace(/ \(row \d+(, issued [\d-]+)?\)$/, "")).join(", ");
+const addOnNames = (o) => (o.addOns || []).map((a) => a.design).join(", ");
 function factorySheet(XLSX, f, rows) {
-  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Add-on", "Issue Date",
+  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date",
     "Due Date", "Working Days", "Days Late", "Status", "Priority", "Reason for Delay", "Expected Delivery Date"];
-  const body = rows.map((o, i) => {
+  const body = rows.flatMap((o, i) => {
     const late = o.day - dueDay(o);
-    return [i + 1, o.design, o.sub, o.product, addOnNames(o), toDate(o.issueDate),
+    const main = [i + 1, o.design, o.sub, o.product, toDate(o.issueDate),
       toDate(workingDayDate(o.issueDate, dueDay(o))), o.day, late > 0 ? late : 0, o.stage, o.tier === "Buyer" ? "BUYER ORDER" : "Stock", "", ""];
+    // add-on diamonds go directly under their main design; the clock and due date are the main design's
+    const addOns = (o.addOns || []).map((a) => ["", "   ↳ " + a.design, a.sub, a.product || o.product,
+      a.issueDate ? toDate(a.issueDate) : "", "", "", "", `Add-on of Sr ${i + 1}`, "", "", ""]);
+    return [main, ...addOns];
   });
   const aoa = [
     [`Pending orders – ${f}`],
-    [`As of ${fmtDate(data.today)} · ${rows.length} order${rows.length === 1 ? "" : "s"} · please fill in the reason and expected delivery date`],
+    [`As of ${fmtDate(data.today)} · ${rows.length} order${rows.length === 1 ? "" : "s"}${rows.some((o) => o.addOns?.length) ? " (add-on diamonds listed under their main design)" : ""} · please fill in the reason and expected delivery date`],
     [],
     head, ...body,
   ];
@@ -508,9 +513,9 @@ function factorySheet(XLSX, f, rows) {
     const c = ws[ref];
     if (c && c.t === "d") c.z = "dd-mmm-yyyy";
   }
-  ws["!cols"] = [6, 26, 14, 14, 28, 13, 13, 12, 10, 14, 13, 30, 20].map((w) => ({ wch: w }));
-  ws["!autofilter"] = { ref: `A4:M${4 + body.length}` };
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } }];
+  ws["!cols"] = [6, 34, 14, 14, 13, 13, 12, 10, 16, 13, 30, 20].map((w) => ({ wch: w }));
+  ws["!autofilter"] = { ref: `A4:L${4 + body.length}` };
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }];
   return ws;
 }
 const safeName = (s) => s.replace(/[\\/:*?"<>|\[\]]/g, " ").trim();
@@ -549,7 +554,7 @@ function orderTable(rows, withAction) {
   </tr></thead><tbody>${rows.map((o, i) => `<tr class="${selected.has(keyOf(o)) ? "picked" : ""}">
     <td class="pick"><input type="checkbox" data-pick="${i}" ${selected.has(keyOf(o)) ? "checked" : ""} aria-label="Select ${esc(o.design)}"></td>
     ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
-    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="small">+ add-on: ${esc(a)}</div>`).join("")}
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="addon">↳ <b>${esc(a.design)}</b> <span class="small">add-on${a.issueDate ? " · issued " + fmtDate(a.issueDate) : ""} · row ${a.row}</span></div>`).join("")}
       <div class="msg-btns"><button data-copy="${i}" title="Copy a follow-up message for the factory group">Copy message</button>
       <a href="${waLink(orderMessage(o))}" target="_blank" rel="noopener" title="Open WhatsApp with this message">WhatsApp</a></div></td>
     <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>
