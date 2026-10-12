@@ -292,3 +292,43 @@ describe("add-ons belong to the original order", () => {
     expect(board.exceptions.addOnOrphans.map((e) => e.design)).toEqual(["SN-RG-SL-EM-099 ADD-ON"]);
   });
 });
+
+describe("every sub design is its own order", () => {
+  const today = d("2026-10-12");
+  const H = ["Date", "Design Number", "Sub Design No", "Product", "Buyer Name", "Diamond Pcs", "Diamond Carats", "Status", "Received date"];
+  // SN-BR-TN-3CT-YG with subs 54…58, each sub on its own row, plus an extra diamond-size row under 55
+  const grid: Grid = [
+    H,
+    [d("2026-09-14"), "SN-BR-TN-3CT-YG", "54", "Bracelet", "", 10, 3, "", ""],
+    ["", "", "55", "", "", 10, 3, "", ""],
+    ["", "", "", "", "", 2, 0.5, "", ""],
+    ["", "", "56", "", "", 10, 3, "Received", d("2026-09-30")],
+    ["", "", "57", "", "", 10, 3, "", ""],
+    ["", "", "58", "", "", 10, 3, "", ""],
+    [d("2026-09-20"), "SN-RG-ONE", "", "Ring", "Mr Shah", 1, 0.2, "", ""],
+  ];
+  const board = buildBoard([{ name: "Seyaa Solitaire", grid }], today);
+
+  it("lists every pending sub, not just the first", () => {
+    const subs = board.orders.filter((o) => o.design === "SN-BR-TN-3CT-YG").map((o) => o.sub).sort();
+    expect(subs).toEqual(["54", "55", "57", "58"]); // 56 was received
+  });
+
+  it("each sub carries the block's date and product and its own diamonds", () => {
+    const s55 = board.orders.find((o) => o.sub === "55")!;
+    expect(s55).toMatchObject({ issueDate: "2026-09-14", product: "Bracelet", pcs: 12, carats: 3.5, row: 3 });
+  });
+
+  it("a block without sub designs is still one order", () => {
+    expect(board.orders.filter((o) => o.design === "SN-RG-ONE")).toHaveLength(1);
+    expect(board.orders.find((o) => o.design === "SN-RG-ONE")!.tier).toBe("Buyer");
+  });
+
+  it("an 'ADD ON 055' row joins sub 55 specifically", () => {
+    const g: Grid = [...grid, [d("2026-10-01"), "SN-BR-TN-3CT-YG", "ADD ON 055", "Bracelet", "", 1, 0.1, "", ""]];
+    const b = buildBoard([{ name: "Seyaa Solitaire", grid: g }], today);
+    const s55 = b.orders.find((o) => o.sub === "55")!;
+    expect(s55.addOns.map((a) => a.sub)).toEqual(["ADD ON 055"]);
+    expect(b.orders.find((o) => o.sub === "58")!.addOns).toEqual([]);
+  });
+});

@@ -252,44 +252,83 @@ export interface Block {
   addOns: { row: number; design: string; sub: string; product: string; issue: number | null }[]; // add-on blocks merged into this order
 }
 
-/** One order = one design block: a row with a Design Number plus every following row without one. */
+/**
+ * One order = one SUB DESIGN of a design block.
+ *
+ * A block starts on a row with a Design Number; following rows without one belong to it. Inside a block, every
+ * row that carries a new Sub Design No starts its own order (e.g. SN-BR-TN-3CT-YG with subs 54…85 is 32 orders);
+ * rows with an empty Sub Design No are further diamond sizes of the sub above. Each order has its own status,
+ * received date, pieces and carats. Date, product, buyer and memo are written once per block and fill down to
+ * every sub that has none of its own.
+ */
 export function toBlocks(factory: string, grid: Grid): Block[] {
   const cols = findColumns(grid);
   if (!cols || cols.design === undefined) return [];
   const get = (row: Cell[], f: Field): Cell => (cols[f] === undefined ? null : row[cols[f]!]);
 
-  const blocks: Block[] = [];
+  const items: Block[] = [];
+  let group: Block[] = []; // the subs of the current design block
+  const shared = { product: "", buyer: "", memo: "", issue: null as number | null };
   let cur: Block | null = null;
+
+  const fillDown = () => {
+    for (const it of group) {
+      if (!it.product) it.product = shared.product;
+      if (!it.buyer) it.buyer = shared.buyer;
+      if (!it.memo) it.memo = shared.memo;
+      if (it.issue === null) it.issue = shared.issue;
+    }
+    group = [];
+  };
+  const startItem = (r: number, design: string): Block => {
+    const it: Block = {
+      factory,
+      row: r + 1,
+      rowCount: 0,
+      design,
+      sub: "",
+      product: "",
+      buyer: "",
+      memo: "",
+      issue: null,
+      received: null,
+      statuses: [],
+      pcs: 0,
+      carats: 0,
+      addOns: [],
+    };
+    items.push(it);
+    group.push(it);
+    return it;
+  };
+
   for (let r = cols.headerRow + 1; r < grid.length; r++) {
     const row = grid[r] ?? [];
     const design = text(get(row, "design"));
+    const sub = text(get(row, "sub"));
     if (design) {
-      cur = {
-        factory,
-        row: r + 1,
-        rowCount: 0,
-        design,
-        sub: "",
-        product: "",
-        buyer: "",
-        memo: "",
-        issue: null,
-        received: null,
-        statuses: [],
-        pcs: 0,
-        carats: 0,
-        addOns: [],
-      };
-      blocks.push(cur);
+      fillDown();
+      Object.assign(shared, { product: "", buyer: "", memo: "", issue: null });
+      cur = startItem(r, design);
+    } else if (!cur) {
+      continue; // rows above the first design number
+    } else if (sub && cur.sub && norm(sub) !== norm(cur.sub)) {
+      cur = startItem(r, cur.design); // next sub design under the same design number
     }
-    if (!cur) continue; // rows above the first design number
     cur.rowCount++;
-    // forward-fill: first non-empty value in the block wins
-    if (!cur.sub) cur.sub = text(get(row, "sub"));
-    if (!cur.product) cur.product = text(get(row, "product"));
-    if (!cur.buyer) cur.buyer = text(get(row, "buyer"));
-    if (!cur.memo) cur.memo = text(get(row, "memo"));
-    if (cur.issue === null) cur.issue = parseDate(get(row, "date"));
+    if (!cur.sub) cur.sub = sub;
+    const product = text(get(row, "product"));
+    const buyer = text(get(row, "buyer"));
+    const memo = text(get(row, "memo"));
+    const issue = parseDate(get(row, "date"));
+    if (!cur.product) cur.product = product;
+    if (!cur.buyer) cur.buyer = buyer;
+    if (!cur.memo) cur.memo = memo;
+    if (cur.issue === null) cur.issue = issue;
+    if (!shared.product) shared.product = product;
+    if (!shared.buyer) shared.buyer = buyer;
+    if (!shared.memo) shared.memo = memo;
+    if (shared.issue === null) shared.issue = issue;
     const rec = get(row, "received");
     if (cur.received === null && text(rec)) cur.received = parseDate(rec) ?? -1; // -1 = filled but unreadable
     const st = text(get(row, "status"));
@@ -297,7 +336,8 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
     cur.pcs += num(get(row, "pcs"));
     cur.carats += num(get(row, "carats"));
   }
-  return blocks;
+  fillDown();
+  return items;
 }
 
 // ---------------------------------------------------------------- add-ons
@@ -336,14 +376,20 @@ export function baseDesign(design: string): string {
 export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[] } {
   const orders: Block[] = [];
   const orphans: Block[] = [];
-  const latest = new Map<string, Block>(); // base design → most recent original so far
+  const latest = new Map<string, Block>(); // "design" and "design|sub" → most recent original so far
+  // "ADD ON 014" → "14", "014" → "14" (the number after ADD ON is the sub it belongs to)
+  const subKey = (sub: string) =>
+    sub.replace(/\(?\badd[\s\-_.]*on\b\)?/i, "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=\d)/, "");
   for (const b of blocks) {
     if (!isAddOnBlock(b)) {
       orders.push(b);
       latest.set(baseDesign(b.design), b);
+      if (b.sub) latest.set(baseDesign(b.design) + "|" + subKey(b.sub), b);
       continue;
     }
-    const main = latest.get(baseDesign(b.design));
+    // prefer the original with the same sub design ("ADD ON 014" → sub 014), else the latest with the design
+    const sub = isAddOn(b.sub) ? subKey(b.sub) : "";
+    const main = (sub && latest.get(baseDesign(b.design) + "|" + sub)) || latest.get(baseDesign(b.design));
     if (!main) {
       orphans.push(b);
       continue;
