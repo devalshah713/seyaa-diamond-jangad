@@ -475,30 +475,27 @@ function loadXlsx() {
 }
 const toDate = (iso) => new Date(iso + "T00:00:00Z");
 function factorySheet(XLSX, f, rows) {
-  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date", "Memo No", "Diamond Pcs", "Diamond Carats",
+  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date",
     "Due Date", "Working Days", "Days Late", "Status", "Priority", "Reason for Delay", "Expected Delivery Date"];
   const body = rows.map((o, i) => {
     const late = o.day - dueDay(o);
-    return [i + 1, o.design, o.sub, o.product, toDate(o.issueDate), o.memo, o.pcs, Math.round(o.carats * 1000) / 1000,
+    return [i + 1, o.design, o.sub, o.product, toDate(o.issueDate),
       toDate(workingDayDate(o.issueDate, dueDay(o))), o.day, late > 0 ? late : 0, o.stage, o.tier === "Buyer" ? "BUYER ORDER" : "Stock", "", ""];
   });
-  const totals = ["", "TOTAL", "", "", "", "", rows.reduce((a, o) => a + o.pcs, 0),
-    Math.round(rows.reduce((a, o) => a + o.carats, 0) * 1000) / 1000, "", "", "", "", "", "", ""];
   const aoa = [
     [`Pending orders – ${f}`],
     [`As of ${fmtDate(data.today)} · ${rows.length} order${rows.length === 1 ? "" : "s"} · please fill in the reason and expected delivery date`],
     [],
-    head, ...body, [], totals,
+    head, ...body,
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "dd-mmm-yyyy" });
   for (const ref of Object.keys(ws)) {
     const c = ws[ref];
     if (c && c.t === "d") c.z = "dd-mmm-yyyy";
-    if (c && c.t === "n" && /^H\d+$/.test(ref)) c.z = "0.000";
   }
-  ws["!cols"] = [6, 26, 14, 14, 13, 11, 11, 13, 13, 12, 10, 14, 13, 30, 20].map((w) => ({ wch: w }));
-  ws["!autofilter"] = { ref: `A4:O${4 + body.length}` };
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 14 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 14 } }];
+  ws["!cols"] = [6, 26, 14, 14, 13, 13, 12, 10, 14, 13, 30, 20].map((w) => ({ wch: w }));
+  ws["!autofilter"] = { ref: `A4:L${4 + body.length}` };
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }];
   return ws;
 }
 const safeName = (s) => s.replace(/[\\/:*?"<>|\[\]]/g, " ").trim();
