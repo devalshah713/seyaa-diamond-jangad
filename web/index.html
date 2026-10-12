@@ -82,6 +82,13 @@ tr:last-child td { border-bottom: 0; }
 .fbtn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .fbtn[aria-pressed="true"] b { color: var(--accent); }
 .stage-table td, .stage-table th { padding: 6px 10px; }
+.dbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-bottom: 14px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.dbar label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.dbar .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+.dbar .quick button { font-size: 13px; padding: 5px 9px; }
+.dbar .quick button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.dbar .oldest { flex-basis: 100%; font-size: 13px; }
+.dbar .oldest b { color: var(--breach); }
 .msg-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .msg-btns button, .msg-btns a { font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
 .msg-btns button.done { border-color: var(--ok); color: var(--ok); }
@@ -112,6 +119,7 @@ tr:last-child td { border-bottom: 0; }
 <div class="wrap">
   <div id="error"></div>
   <nav class="fbar" id="fbar" aria-label="Factory"></nav>
+  <section class="dbar" id="dbar" aria-label="Issue date filter"></section>
   <section class="band" id="band" aria-label="Buyer orders due"></section>
   <section class="kpis" id="kpis"></section>
   <nav class="tabs" role="tablist" id="tabs"></nav>
@@ -133,16 +141,50 @@ let data = null;
 let tab = safeGet("tab") || "follow";
 const q = { tier: "", stage: "", search: "" };
 // selected factory ("" = all): from the link (#f=…) first, else the last one used
-let factory = decodeURIComponent((location.hash.match(/f=([^&]*)/) || [])[1] || "") || safeGet("factory") || "";
+// Filters live in the link (#f=PRATIK%20C-6&from=2026-09-01&to=2026-09-30) so a view can be shared.
+// The factory is also remembered between visits; dates and sort are not.
+const hp = new URLSearchParams(location.hash.slice(1));
+let factory = hp.has("f") ? hp.get("f") : safeGet("factory") || "";
+let dfrom = hp.get("from") || "";
+let dto = hp.get("to") || "";
+let sortBy = safeGet("sort") || "priority";
 const inFactory = (x) => !factory || x.factory === factory;
-const orders = () => data.orders.filter(inFactory);
+const inDates = (o) => (!dfrom || o.issueDate >= dfrom) && (!dto || o.issueDate <= dto); // ISO dates compare as text
+const SORTS = {
+  priority: [(a, b) => 0, "Buyer first, most overdue"], // server order
+  oldest: [(a, b) => a.issueDate.localeCompare(b.issueDate) || b.day - a.day, "Oldest issued first"],
+  newest: [(a, b) => b.issueDate.localeCompare(a.issueDate), "Newest issued first"],
+  carats: [(a, b) => b.carats - a.carats, "Most carats first"],
+};
+const orders = () => data.orders.filter((o) => inFactory(o) && inDates(o)).sort(SORTS[sortBy][0]);
 const isLate = (o) => o.stage !== "On Track";
+function syncHash() {
+  const p = new URLSearchParams();
+  if (factory) p.set("f", factory);
+  if (dfrom) p.set("from", dfrom);
+  if (dto) p.set("to", dto);
+  const h = p.toString();
+  history.replaceState(null, "", h ? "#" + h : location.pathname);
+}
 function setFactory(f) {
   factory = f;
   safeSet("factory", f);
-  history.replaceState(null, "", f ? "#f=" + encodeURIComponent(f) : location.pathname);
+  syncHash();
   render();
 }
+function setDates(from, to) {
+  dfrom = from || "";
+  dto = to || "";
+  if (dfrom && dto && dfrom > dto) [dfrom, dto] = [dto, dfrom];
+  syncHash();
+  render();
+}
+const isoDay = (d) => d.toISOString().slice(0, 10);
+function monthRange(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return [`${ym}-01`, isoDay(new Date(Date.UTC(y, m, 0)))];
+}
+const monthLabel = (ym) => new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" });
 
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
@@ -200,7 +242,8 @@ function renderMeta() {
   el.textContent = `Sheet read ${at.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST` +
     ` · ${ageMin <= 0 ? "just now" : ageMin + " min ago"} · today ${fmtDate(data.today)}` +
     (data.config.cutoffDate ? ` · ignoring orders before ${fmtDate(data.config.cutoffDate)}` : "") +
-    (factory ? ` · showing ${factory} only` : "");
+    (factory ? ` · showing ${factory} only` : "") +
+    (dfrom || dto ? ` · issued ${dfrom ? fmtDate(dfrom) : "start"} → ${dto ? fmtDate(dto) : "today"}` : "");
   el.className = "meta" + (ageMin > 10 ? " stale" : "");
 }
 setInterval(() => data && renderMeta(), 30000);
@@ -212,12 +255,13 @@ function render() {
     `<button class="fbtn" aria-pressed="${factory === f}" data-f="${esc(f)}"><b>${esc(label)}</b>` +
     `<span>${open} open · <span class="${late ? "late" : ""}">${late} late</span></span></button>`;
   document.getElementById("fbar").innerHTML =
-    btn("", "All factories", data.orders.length, data.orders.filter(isLate).length) +
+    btn("", "All factories", data.orders.filter(inDates).length, data.orders.filter((o) => inDates(o) && isLate(o)).length) +
     data.factories.map((f) => {
-      const os = data.orders.filter((o) => o.factory === f.factory);
+      const os = data.orders.filter((o) => o.factory === f.factory && inDates(o));
       return btn(f.factory, f.factory, os.length, os.filter(isLate).length);
     }).join("");
   document.querySelectorAll("#fbar .fbtn").forEach((b) => b.onclick = () => setFactory(b.dataset.f));
+  renderDateBar();
 
   // buyer band — buyer orders at or past the due day
   const due = orders().filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
@@ -319,6 +363,58 @@ document.addEventListener("click", (e) => {
   copyText(v === "all" ? factoryMessage(factory, shown.filter(isLate)) : orderMessage(shown[+v]), b);
 });
 
+function renderDateBar() {
+  const months = [...new Set(data.orders.filter(inFactory).map((o) => o.issueDate.slice(0, 7)))].sort().reverse();
+  const curMonth = dfrom && dto && dfrom.endsWith("-01") && monthRange(dfrom.slice(0, 7))[1] === dto ? dfrom.slice(0, 7) : "";
+  const thisMonth = data.today.slice(0, 7);
+  const lastMonth = isoDay(new Date(Date.UTC(+thisMonth.slice(0, 4), +thisMonth.slice(5, 7) - 2, 1))).slice(0, 7);
+  const ago = (n) => { const d = new Date(data.today + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - n); return isoDay(d); };
+  const quick = [
+    ["This month", ...monthRange(thisMonth)],
+    ["Last month", ...monthRange(lastMonth)],
+    ["Last 30 days", ago(30), data.today],
+    ["Older than 30 days", "", ago(31)],
+    ["Older than 90 days", "", ago(91)],
+  ];
+  const pending = data.orders.filter((o) => inFactory(o) && inDates(o));
+  const oldest = pending.reduce((a, o) => (!a || o.issueDate < a.issueDate ? o : a), null);
+  document.getElementById("dbar").innerHTML = `
+    <label>Issued in month
+      <select id="d-month"><option value="">All months</option>${months.map((m) =>
+        `<option value="${m}" ${m === curMonth ? "selected" : ""}>${monthLabel(m)} (${data.orders.filter((o) => inFactory(o) && o.issueDate.startsWith(m)).length})</option>`).join("")}</select>
+    </label>
+    <label>From <input type="date" id="d-from" value="${dfrom}" max="${data.today}"></label>
+    <label>To <input type="date" id="d-to" value="${dto}" max="${data.today}"></label>
+    <div class="quick">${quick.map(([l, f, t]) =>
+      `<button data-from="${f}" data-to="${t}" aria-pressed="${dfrom === f && dto === t}">${l}</button>`).join("")}
+      ${dfrom || dto ? '<button data-from="" data-to="">✕ Clear dates</button>' : ""}</div>
+    <label>Sort lists
+      <select id="d-sort">${Object.entries(SORTS).map(([k, [, l]]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select>
+    </label>
+    <div class="oldest">${oldest
+      ? `Oldest pending${factory ? " at " + esc(factory) : ""}${dfrom || dto ? " in this range" : ""}: <b>${fmtDate(oldest.issueDate)}</b> — ${esc(oldest.design)} (${esc(oldest.factory)}), day ${oldest.day}, ${cts(oldest.carats)} cts · ${pending.length} pending in view`
+      : "No pending orders in this range."}</div>`;
+  document.getElementById("d-month").onchange = (e) => e.target.value ? setDates(...monthRange(e.target.value)) : setDates("", "");
+  document.getElementById("d-from").onchange = (e) => setDates(e.target.value, dto);
+  document.getElementById("d-to").onchange = (e) => setDates(dfrom, e.target.value);
+  document.getElementById("d-sort").onchange = (e) => { sortBy = e.target.value; safeSet("sort", sortBy); render(); };
+  document.querySelectorAll("#dbar .quick button").forEach((b) => b.onclick = () => setDates(b.dataset.from, b.dataset.to));
+}
+
+/** Per-factory open / breached / carats / stages from the orders currently in view. */
+function factoryStats(f) {
+  const os = data.orders.filter((o) => o.factory === f.factory && inDates(o));
+  const byStage = Object.fromEntries(STAGE_ORDER.map((st) => [st, { count: 0, carats: 0 }]));
+  for (const o of os) { byStage[o.stage].count++; byStage[o.stage].carats += o.carats; }
+  return {
+    ...f,
+    open: os.length,
+    breached: os.filter((o) => o.stage === "Breach" || o.stage === "Critical").length,
+    carats: os.reduce((a, o) => a + o.carats, 0),
+    byStage,
+  };
+}
+
 function orderTable(rows, withAction) {
   shown = rows;
   if (!rows.length) return `<div class="panel"><div class="empty">Nothing here.</div></div>`;
@@ -342,7 +438,7 @@ function viewFollow() {
     ? `<div class="msg-btns"><button data-copy="all">Copy all ${rows.length} for ${esc(factory)}</button>
        <a href="${waLink(factoryMessage(factory, rows))}" target="_blank" rel="noopener">WhatsApp all</a></div>`
     : `<span class="small">Pick a factory above to copy one message covering all its late orders.</span>`;
-  return `<div class="bulk"><p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — buyer orders first, then longest overdue.</p>${bulk}</div>` + orderTable(rows, true);
+  return `<div class="bulk"><p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — sorted: ${SORTS[sortBy][1].toLowerCase()}.</p>${bulk}</div>` + orderTable(rows, true);
 }
 
 function viewQueue() {
@@ -373,11 +469,11 @@ function bindFilters() {
 function viewScore() {
   const target = data.config.stockDue;
   return `<p class="small">Actual turnaround on closed orders, in working days (issue → received), against the ${target}-day target.
-    Mean and median both shown: never-closed rows drag the mean.</p>
+    Mean and median both shown: never-closed rows drag the mean.${dfrom || dto ? " The date filter applies to Open, Breached and Carats out; turnaround covers all closed orders." : ""}</p>
   <div class="panel"><table><thead><tr>
     <th>Factory</th><th class="num">Closed (n)</th><th class="num">Mean TAT</th><th class="num">Median TAT</th>
     <th class="num">Open</th><th class="num">Breached</th><th class="num">Carats out</th>
-  </tr></thead><tbody>${data.factories.filter(inFactory).map((f) => {
+  </tr></thead><tbody>${data.factories.filter(inFactory).map(factoryStats).map((f) => {
     const bad = (x) => x != null && x > target ? ` style="color:var(--breach);font-weight:700"` : "";
     return `<tr><td><b>${esc(f.factory)}</b></td><td class="num">${f.tat.n}</td>
       <td class="num"${bad(f.tat.mean)}>${f.tat.mean ?? "—"}</td><td class="num"${bad(f.tat.median)}>${f.tat.median ?? "—"}</td>
@@ -386,7 +482,7 @@ function viewScore() {
 }
 
 function viewRisk() {
-  const fs = data.factories.filter(inFactory);
+  const fs = data.factories.filter(inFactory).map(factoryStats);
   const max = Math.max(1, ...fs.map((f) => f.carats));
   const detail = factory && fs[0] ? `<div class="panel" style="margin-top:14px"><table class="stage-table"><thead><tr>
     <th>Stage</th><th class="num">Orders</th><th class="num">Carats</th></tr></thead><tbody>${STAGE_ORDER.map((st) =>
@@ -414,8 +510,9 @@ function viewEx() {
 }
 
 window.addEventListener("hashchange", () => {
-  const f = decodeURIComponent((location.hash.match(/f=([^&]*)/) || [])[1] || "");
-  if (data && f !== factory) setFactory(f);
+  const p = new URLSearchParams(location.hash.slice(1));
+  factory = p.get("f") || ""; dfrom = p.get("from") || ""; dto = p.get("to") || "";
+  if (data) render();
 });
 
 load(false);
