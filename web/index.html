@@ -145,7 +145,7 @@ const STAGE_VAR = {
 const STAGE_ORDER = ["Critical", "Due Today", "Breach", "Final Warning", "Warning 2", "Warning 1", "On Track"];
 const SOLID = new Set(["Breach", "Critical"]);
 const TABS = [
-  ["follow", "Follow-Up Today"], ["queue", "Action Queue"], ["score", "Factory Scorecard"],
+  ["follow", "Follow-Up Today"], ["queue", "All Pending Orders"], ["score", "Factory Scorecard"],
   ["risk", "Carats at Risk"], ["ex", "Exceptions"],
 ];
 let data = null;
@@ -300,8 +300,9 @@ function render() {
   document.getElementById("kpis").innerHTML = tiles.map(([l, v, c]) =>
     `<div class="kpi" style="--c:var(${c})"><div class="l">${l}</div><div class="n">${v.count}</div><div class="c">${cts(v.carats)} cts</div></div>`).join("");
 
+  const count = { follow: followRows().length, queue: orders().length };
   document.getElementById("tabs").innerHTML = TABS.map(([k, l]) =>
-    `<button role="tab" aria-selected="${k === tab}" data-k="${k}">${l}</button>`).join("");
+    `<button role="tab" aria-selected="${k === tab}" data-k="${k}">${l}${k in count ? ` <span class="small">(${count[k]})</span>` : ""}</button>`).join("");
   document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.k; safeSet("tab", tab); render(); });
 
   const v = document.getElementById("view");
@@ -377,10 +378,12 @@ async function copyText(text, btn) {
 const waLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
 let shown = []; // rows in the current table, for the message buttons
 document.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-goto]");
+  if (g) { e.preventDefault(); tab = g.dataset.goto; safeSet("tab", tab); render(); return; }
   const b = e.target.closest("[data-copy]");
   if (!b) return;
   const v = b.dataset.copy;
-  copyText(v === "all" ? factoryMessage(factory, shown.filter(isLate)) : orderMessage(shown[+v]), b);
+  copyText(v === "all" ? factoryMessage(factory, shown) : orderMessage(shown[+v]), b);
 });
 
 function renderDateBar() {
@@ -552,13 +555,18 @@ function orderTable(rows, withAction) {
   </tr>`).join("")}</tbody></table></div>`;
 }
 
+/** Late orders; with "Buyer orders" selected, every pending buyer order so urgent ones can be picked early. */
+const followRows = () => (tier === "Buyer" ? orders() : orders().filter(isLate));
 function viewFollow() {
-  const rows = orders().filter(isLate);
+  const rows = followRows();
   const bulk = factory && rows.length
     ? `<div class="msg-btns"><button data-copy="all">Copy all ${rows.length} for ${esc(factory)}</button>
        <a href="${waLink(factoryMessage(factory, rows))}" target="_blank" rel="noopener">WhatsApp all</a></div>`
-    : `<span class="small">Pick a factory above to copy one message covering all its late orders.</span>`;
-  return `<div class="bulk"><p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — sorted: ${SORTS[sortBy][1].toLowerCase()}.</p>${bulk}</div>` + orderTable(rows, true);
+    : `<span class="small">Pick a factory above to copy one message covering all these orders.</span>`;
+  const what = tier === "Buyer"
+    ? `${rows.length} pending buyer orders${factory ? " at " + esc(factory) : ""} — all of them, including ones not yet due`
+    : `${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step (on-time orders are in <a href="#" data-goto="queue">All Pending Orders</a>)`;
+  return `<div class="bulk"><p class="small">${what} — sorted: ${SORTS[sortBy][1].toLowerCase()}.</p>${bulk}</div>` + orderTable(rows, true);
 }
 
 function viewQueue() {

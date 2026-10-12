@@ -5,7 +5,7 @@ are late, by how much, and at which factory. Runs on **Cloudflare Pages** (stati
 Full requirements: [SPEC.md](SPEC.md).
 
 ```
-web/index.html            the UI (Pages build output) — buyer band, KPI tiles, Follow-Up Today, Action Queue,
+web/index.html            the UI (Pages build output) — filters, KPI tiles, Follow-Up Today, All Pending Orders,
                           Factory Scorecard, Carats at Risk, Exceptions
 functions/_middleware.ts  login guard: no valid session cookie → /login (pages) or 401 (API)
 functions/api/login.ts    checks username/password live against the users sheet, sets a signed 12h cookie
