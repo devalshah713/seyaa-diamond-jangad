@@ -100,7 +100,6 @@ tr.picked td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .selbar .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .selbar button { background: transparent; color: var(--band-ink); border-color: rgb(255 255 255 / .35); }
 .selbar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.addon { margin-top: 4px; padding: 3px 8px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 0 6px 6px 0; font-size: 13px; }
 .msg-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .msg-btns button, .msg-btns a { font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
 .msg-btns button.done { border-color: var(--ok); color: var(--ok); }
@@ -340,7 +339,6 @@ function orderLines(o) {
     `Diamonds: ${o.pcs} pc${o.pcs === 1 ? "" : "s"} · ${cts(o.carats)} cts`,
     `Due: ${fmtDate(workingDayDate(o.issueDate, dueDay(o)))} – ${timing}`,
     o.tier === "Buyer" ? "Priority: BUYER ORDER" : "",
-    o.addOns?.length ? "Includes add-on: " + addOnNames(o) : "",
   ].filter(Boolean);
 }
 function orderMessage(o) {
@@ -488,23 +486,17 @@ function loadXlsx() {
   });
 }
 const toDate = (iso) => new Date(iso + "T00:00:00Z");
-/** Add-on design numbers merged into this order, e.g. "SN-RG-SL-EM-014 ADD-ON". */
-const addOnNames = (o) => (o.addOns || []).map((a) => a.design + (a.sub ? " / Sub " + a.sub : "")).join(", ");
 function factorySheet(XLSX, f, rows) {
   const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date",
     "Due Date", "Working Days", "Days Late", "Status", "Priority", "Reason for Delay", "Expected Delivery Date"];
-  const body = rows.flatMap((o, i) => {
+  const body = rows.map((o, i) => {
     const late = o.day - dueDay(o);
-    const main = [i + 1, o.design, o.sub, o.product, toDate(o.issueDate),
+    return [i + 1, o.design, o.sub, o.product, toDate(o.issueDate),
       toDate(workingDayDate(o.issueDate, dueDay(o))), o.day, late > 0 ? late : 0, o.stage, o.tier === "Buyer" ? "BUYER ORDER" : "Stock", "", ""];
-    // add-on diamonds go directly under their main design; the clock and due date are the main design's
-    const addOns = (o.addOns || []).map((a) => ["", "   ↳ " + a.design, a.sub, a.product || o.product,
-      a.issueDate ? toDate(a.issueDate) : "", "", "", "", `Add-on of Sr ${i + 1}`, "", "", ""]);
-    return [main, ...addOns];
   });
   const aoa = [
     [`Pending orders – ${f}`],
-    [`As of ${fmtDate(data.today)} · ${rows.length} order${rows.length === 1 ? "" : "s"}${rows.some((o) => o.addOns?.length) ? " (add-on diamonds listed under their main design)" : ""} · please fill in the reason and expected delivery date`],
+    [`As of ${fmtDate(data.today)} · ${rows.length} order${rows.length === 1 ? "" : "s"} · please fill in the reason and expected delivery date`],
     [],
     head, ...body,
   ];
@@ -554,7 +546,7 @@ function orderTable(rows, withAction) {
   </tr></thead><tbody>${rows.map((o, i) => `<tr class="${selected.has(keyOf(o)) ? "picked" : ""}">
     <td class="pick"><input type="checkbox" data-pick="${i}" ${selected.has(keyOf(o)) ? "checked" : ""} aria-label="Select ${esc(o.design)}"></td>
     ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
-    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="addon">↳ <b>${esc(a.design)}</b>${a.sub ? " · sub " + esc(a.sub) : ""} <span class="small">add-on${a.issueDate ? " · issued " + fmtDate(a.issueDate) : ""} · row ${a.row}</span></div>`).join("")}
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}
       <div class="msg-btns"><button data-copy="${i}" title="Copy a follow-up message for the factory group">Copy message</button>
       <a href="${waLink(orderMessage(o))}" target="_blank" rel="noopener" title="Open WhatsApp with this message">WhatsApp</a></div></td>
     <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>
@@ -639,7 +631,6 @@ function viewEx() {
   return `<div class="exgrid">
     ${box("Likely received", "Received date is filled but no row carries a Received status. Excluded from the open list — fix the status in the sheet.", e.likelyReceived)}
     ${box("No issue date", "No usable date on the block, so no clock can run. Excluded from the open list.", e.noDate)}
-    ${box("Add-on without original", "Design marked as an add-on, but no earlier order with the same design number on that tab. It is not on the open list — check the design number in the sheet.", e.addOnOrphans || [])}
     ${box("Odd status", data.config.knownStatuses.length ? "Status value outside the dropdown." : "Check disabled — set KNOWN_STATUSES to the dropdown values.", e.oddStatus)}
     ${e.beforeCutoff ? `<p class="small">${e.beforeCutoff} open orders issued before the cut-off are hidden.</p>` : ""}
   </div>`;

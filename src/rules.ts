@@ -249,7 +249,6 @@ export interface Block {
   statuses: { row: number; value: string }[];
   pcs: number;
   carats: number;
-  addOns: { row: number; design: string; sub: string; product: string; issue: number | null }[]; // add-on blocks merged into this order
 }
 
 /**
@@ -295,7 +294,6 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
       statuses: [],
       pcs: 0,
       carats: 0,
-      addOns: [],
     };
     items.push(it);
     group.push(it);
@@ -340,7 +338,7 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
   return items;
 }
 
-// ---------------------------------------------------------------- add-ons
+// ---------------------------------------------------------------- add-ons (hidden from the board)
 
 // "ADD-ON", "ADD ON", "ADDON", "Add-on 2", "(add on)" … anywhere in the design string
 const ADD_ON = /\(?\badd[\s\-_.]*on\b\)?[\s\-_.#]*\d*\)?/i;
@@ -367,54 +365,7 @@ export function baseDesign(design: string): string {
     .replace(/^[-_.]+|[-_.]+$/g, "");
 }
 
-/**
- * Add-on diamonds belong to the ORIGINAL order and must not start a new clock.
- * Each add-on block is merged into the closest earlier block on the same tab with the same base design:
- * its rows' pieces, carats and statuses join the original, which keeps its own issue date.
- * Add-ons with no earlier original are returned as orphans.
- */
-export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[] } {
-  const orders: Block[] = [];
-  const orphans: Block[] = [];
-  const latest = new Map<string, Block>(); // "design" and "design|sub" → most recent original so far
-  // "ADD ON 014" → "14", "014" → "14" (the number after ADD ON is the sub it belongs to)
-  const subKey = (sub: string) =>
-    sub.replace(/\(?\badd[\s\-_.]*on\b\)?/i, "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+(?=\d)/, "");
-  for (const b of blocks) {
-    if (!isAddOnBlock(b)) {
-      orders.push(b);
-      latest.set(baseDesign(b.design), b);
-      if (b.sub) latest.set(baseDesign(b.design) + "|" + subKey(b.sub), b);
-      continue;
-    }
-    // prefer the original with the same sub design ("ADD ON 014" → sub 014), else the latest with the design
-    const sub = isAddOn(b.sub) ? subKey(b.sub) : "";
-    const main = (sub && latest.get(baseDesign(b.design) + "|" + sub)) || latest.get(baseDesign(b.design));
-    if (!main) {
-      orphans.push(b);
-      continue;
-    }
-    main.addOns.push({ row: b.row, design: b.design, sub: b.sub, product: b.product, issue: b.issue });
-    main.rowCount += b.rowCount;
-    main.pcs += b.pcs;
-    main.carats += b.carats;
-    main.statuses.push(...b.statuses);
-    if (main.received === null) main.received = b.received;
-    if (!main.buyer) main.buyer = b.buyer;
-    if (main.issue === null) main.issue = b.issue;
-  }
-  return { orders, orphans };
-}
-
 // ---------------------------------------------------------------- the board
-
-export interface AddOn {
-  design: string;
-  sub: string;
-  product: string;
-  row: number;
-  issueDate: string | null;
-}
 
 export interface Order {
   factory: string;
@@ -432,7 +383,6 @@ export interface Order {
   pcs: number;
   carats: number;
   statuses: string[];
-  addOns: AddOn[]; // add-on diamonds issued later for this same order, shown under it
 }
 
 export interface ExceptionItem {
@@ -465,7 +415,6 @@ export interface Board {
     likelyReceived: ExceptionItem[];
     noDate: ExceptionItem[];
     oddStatus: ExceptionItem[];
-    addOnOrphans: ExceptionItem[];
     beforeCutoff: number;
   };
 }
@@ -497,7 +446,7 @@ export function buildBoard(
 ): Board {
   const known = new Set(c.knownStatuses.map(foldStatus));
   const orders: Order[] = [];
-  const ex: Board["exceptions"] = { likelyReceived: [], noDate: [], oddStatus: [], addOnOrphans: [], beforeCutoff: 0 };
+  const ex: Board["exceptions"] = { likelyReceived: [], noDate: [], oddStatus: [], beforeCutoff: 0 };
   const factories: FactorySummary[] = [];
 
   for (const { name, grid } of tabs) {
@@ -512,11 +461,8 @@ export function buildBoard(
     factories.push(fs);
     const tats: number[] = [];
 
-    const { orders: blocks, orphans } = mergeAddOns(toBlocks(name, grid));
-    for (const o of orphans) {
-      if (o.statuses.some((st) => isClosingStatus(st.value, c))) continue; // already received — nothing to chase
-      ex.addOnOrphans.push({ factory: name, row: o.row, design: o.design, detail: "add-on with no earlier original order on this tab" });
-    }
+    // add-on diamonds ("ADD ON 014" in Sub Design No, or "… ADD-ON" in Design Number) are not tracked: only main designs
+    const blocks = toBlocks(name, grid).filter((b) => !isAddOnBlock(b));
     for (const b of blocks) {
       const ref = { factory: name, row: b.row, design: b.design };
 
@@ -573,13 +519,6 @@ export function buildBoard(
         pcs: b.pcs,
         carats: Math.round(b.carats * 1000) / 1000,
         statuses: b.statuses.map((s) => s.value),
-        addOns: b.addOns.map((a) => ({
-          design: a.design,
-          sub: a.sub,
-          product: a.product,
-          row: a.row,
-          issueDate: a.issue !== null ? serialToISO(a.issue) : null,
-        })),
       });
       fs.open++;
       fs.carats += b.carats;

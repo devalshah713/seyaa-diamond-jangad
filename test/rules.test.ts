@@ -9,6 +9,7 @@ import {
   parseDate,
   serialFromYMD,
   serialToISO,
+  isAddOn,
   stageFor,
   toBlocks,
   todaySerial,
@@ -227,69 +228,26 @@ describe.skipIf(!existsSync(FIXTURE))("§4 baseline, 11 Oct 2026", () => {
   });
 });
 
-describe("add-ons belong to the original order", () => {
-  it("recognises the add-on spellings and strips them", async () => {
-    const { isAddOn, baseDesign } = await import("../src/rules");
-    for (const d of ["SN-RG-SL-EM-014 ADD-ON", "SN-RG-SL-EM-014 add on", "SN-RG-SL-EM-014-ADDON", "SN-RG-SL-EM-014 (Add-On 2)", "SN-RG-SL-EM-014 ADD ON-1"]) {
+describe("add-ons are hidden", () => {
+  it("recognises the add-on spellings", () => {
+    for (const d of ["SN-RG-SL-EM-014 ADD-ON", "SN-RG-SL-EM-014 add on", "SN-RG-SL-EM-014-ADDON", "SN-RG-SL-EM-014 (Add-On 2)", "ADD ON 014"]) {
       expect(isAddOn(d), d).toBe(true);
-      expect(baseDesign(d), d).toBe("SN-RG-SL-EM-014");
     }
     expect(isAddOn("SN-RG-SL-EM-014")).toBe(false);
     expect(isAddOn("SN-PADDON-01")).toBe(false);
-    expect(baseDesign(" sn-rg-sl-em-014 ")).toBe("SN-RG-SL-EM-014");
   });
 
   const today = d("2026-10-12");
   const tab = (rows: Grid) => [{ name: "Seyaa Solitaire", grid: [HEADER, ...rows] }];
 
-  it("merges an add-on into the original: one order, original clock, summed diamonds", () => {
+  it("drops add-on rows (marked in Sub Design No or Design Number) and keeps the main design on its own", () => {
     const board = buildBoard(tab([
-      [d("2026-10-01"), "SN-RG-SL-EM-014", "", "", "", "", 10, 1.5, "", "", "M1"],
-      [d("2026-10-02"), "SN-OTHER-001", "", "", "", "", 1, 0.2, "", "", ""],
-      [d("2026-10-08"), "SN-RG-SL-EM-014 ADD-ON", "", "", "", "", 4, 0.5, "", "", ""],
-      ["", "", "", "", "", "", 2, 0.25, "", "", ""],
+      [d("2026-10-01"), "SN-RG-SL-EM-014", "014", "RING", "", "", 6, 0.6, "", "", ""],
+      [d("2026-10-08"), "SN-RG-SL-EM-014", "ADD ON 014", "RING", "", "", 6, 0.1, "Received", d("2026-10-10"), ""],
+      [d("2026-10-08"), "SN-BR-RD-3CT-025", "ADD ON 025", "BRACELET", "", "", 1, 0, "", "", ""],
+      [d("2026-10-09"), "SN-RG-SL-EM-015 ADD-ON", "", "RING", "", "", 1, 0.1, "", "", ""],
     ]), today);
-    expect(board.orders.map((o) => o.design).sort()).toEqual(["SN-OTHER-001", "SN-RG-SL-EM-014"]);
-    const main = board.orders.find((o) => o.design === "SN-RG-SL-EM-014")!;
-    expect(main).toMatchObject({ issueDate: "2026-10-01", pcs: 16, carats: 2.25, day: workingDayNumber(d("2026-10-01"), today) });
-    expect(main.addOns).toEqual([{ design: "SN-RG-SL-EM-014 ADD-ON", sub: "", product: "", row: 4, issueDate: "2026-10-08" }]);
-  });
-
-  it("recognises an add-on marked in the Sub Design No column (design number unchanged)", () => {
-    const board = buildBoard(tab([
-      [d("2026-09-01"), "SN-RG-SL-EM-014", "014", "RING", "", "", 6, 0.6, "", "", ""],
-      [d("2026-09-18"), "SN-RG-SL-EM-014", "ADD ON 014", "RING", "", "", 6, 0.1, "", "", ""],
-      [d("2026-09-18"), "SN-BR-RD-3CT-025", "ADD ON 025", "BRACELET", "", "", 1, 0, "", "", ""],
-    ]), today);
-    expect(board.orders.map((o) => [o.design, o.sub, o.issueDate])).toEqual([["SN-RG-SL-EM-014", "014", "2026-09-01"]]);
-    expect(board.orders[0].addOns).toMatchObject([{ design: "SN-RG-SL-EM-014", sub: "ADD ON 014", issueDate: "2026-09-18" }]);
-    expect(board.exceptions.addOnOrphans.map((e) => e.design)).toEqual(["SN-BR-RD-3CT-025"]);
-  });
-
-  it("a sub-column add-on whose original was received leaves the board with it", () => {
-    const board = buildBoard(tab([
-      [d("2026-09-01"), "SN-RG-SL-EM-014", "014", "RING", "", "", 6, 0.6, "Received", d("2026-09-15"), ""],
-      [d("2026-09-18"), "SN-RG-SL-EM-014", "ADD ON 014", "RING", "", "", 6, 0.1, "", "", ""],
-    ]), today);
-    expect(board.orders).toHaveLength(0);
-    expect(board.exceptions.addOnOrphans).toHaveLength(0);
-  });
-
-  it("an add-on marked Received closes the whole order", () => {
-    const board = buildBoard(tab([
-      [d("2026-10-01"), "SN-RG-SL-EM-014", "", "", "", "", 10, 1.5, "", "", ""],
-      [d("2026-10-08"), "SN-RG-SL-EM-014 ADD ON", "", "", "", "", 4, 0.5, "Received", d("2026-10-10"), ""],
-    ]), today);
-    expect(board.orders).toHaveLength(0);
-  });
-
-  it("an add-on with no earlier original is flagged, not given its own clock", () => {
-    const board = buildBoard(tab([
-      [d("2026-10-08"), "SN-RG-SL-EM-099 ADD-ON", "", "", "", "", 4, 0.5, "", "", ""],
-      [d("2026-10-09"), "SN-RG-SL-EM-099", "", "", "", "", 4, 0.5, "", "", ""],
-    ]), today);
-    expect(board.orders.map((o) => o.design)).toEqual(["SN-RG-SL-EM-099"]);
-    expect(board.exceptions.addOnOrphans.map((e) => e.design)).toEqual(["SN-RG-SL-EM-099 ADD-ON"]);
+    expect(board.orders.map((o) => [o.design, o.sub, o.pcs])).toEqual([["SN-RG-SL-EM-014", "014", 6]]);
   });
 });
 
@@ -324,11 +282,4 @@ describe("every sub design is its own order", () => {
     expect(board.orders.find((o) => o.design === "SN-RG-ONE")!.tier).toBe("Buyer");
   });
 
-  it("an 'ADD ON 055' row joins sub 55 specifically", () => {
-    const g: Grid = [...grid, [d("2026-10-01"), "SN-BR-TN-3CT-YG", "ADD ON 055", "Bracelet", "", 1, 0.1, "", ""]];
-    const b = buildBoard([{ name: "Seyaa Solitaire", grid: g }], today);
-    const s55 = b.orders.find((o) => o.sub === "55")!;
-    expect(s55.addOns.map((a) => a.sub)).toEqual(["ADD ON 055"]);
-    expect(b.orders.find((o) => o.sub === "58")!.addOns).toEqual([]);
-  });
 });
