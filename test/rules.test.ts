@@ -283,3 +283,38 @@ describe("every sub design is its own order", () => {
   });
 
 });
+
+describe("merged Status / Received cells", () => {
+  const today = d("2026-10-12");
+  const H = ["Date", "Design Number", "Sub Design No", "Product", "Diamond Pcs", "Diamond Carats", "Status", "Received date"];
+  // rows 2-5 (grid index 1-4): one design, four subs; Status merged over grid rows 1-3 = "Received"
+  const grid: Grid = [
+    H,
+    [d("2026-09-01"), "SN-BR-TN-3CT-YG", "54", "Bracelet", 1, 1, "Received", ""],
+    ["", "", "55", "", 1, 1, "", ""],
+    ["", "", "56", "", 1, 1, "", ""],
+    ["", "", "57", "", 1, 1, "", ""],
+  ];
+  const statusCol = 6;
+  const merges = [{ startRowIndex: 1, endRowIndex: 4, startColumnIndex: statusCol, endColumnIndex: statusCol + 1 }];
+
+  it("copies a merged Received down to every row it covers", async () => {
+    const { fillMerges } = await import("../src/rules");
+    const filled = fillMerges(grid, merges);
+    expect(filled.slice(1).map((r) => r[statusCol])).toEqual(["Received", "Received", "Received", ""]);
+    expect(grid[2][statusCol]).toBe(""); // input untouched
+  });
+
+  it("subs under a merged Received leave the board; a sub outside it stays pending", async () => {
+    const { fillMerges } = await import("../src/rules");
+    const board = buildBoard([{ name: "PRATIK C-6", grid: fillMerges(grid, merges) }], today);
+    expect(board.orders.map((o) => o.sub)).toEqual(["57"]);
+  });
+
+  it("does not repeat merged Design Number or carats cells", async () => {
+    const { fillMerges } = await import("../src/rules");
+    const filled = fillMerges(grid, [{ startRowIndex: 1, endRowIndex: 4, startColumnIndex: 1, endColumnIndex: 6 }]);
+    expect(filled.slice(1).map((r) => r[1])).toEqual(["SN-BR-TN-3CT-YG", "", "", ""]);
+    expect(filled.slice(1).map((r) => r[5])).toEqual([1, 1, 1, 1]);
+  });
+});

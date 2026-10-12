@@ -10,6 +10,7 @@ const HEADER = ["Date", "Design Number", "Buyer Name", "Diamond Pcs", "Diamond C
 const party = (design: string) => [HEADER, [serialFromYMD(2026, 10, 1), design, "", 1, 1, "", ""]];
 
 let sheetTabs: Record<string, unknown[][]>;
+let sheetMerges: Record<string, unknown[]> = {};
 const usersGrid = [["Username", "Password", "Role", "Active"], ["boss", "pw", "Admin", "Yes"]];
 
 function fakeKV() {
@@ -39,7 +40,7 @@ function mockGoogle() {
     if (url.host === "oauth2.googleapis.com") return Response.json({ access_token: "t", expires_in: 3600 });
     const path = decodeURIComponent(url.pathname);
     if (path === "/v4/spreadsheets/jangad") {
-      return Response.json({ sheets: Object.keys(sheetTabs).map((title) => ({ properties: { title } })) });
+      return Response.json({ sheets: Object.keys(sheetTabs).map((title) => ({ properties: { title }, merges: sheetMerges[title] })) });
     }
     if (path === "/v4/spreadsheets/jangad/values:batchGet") {
       const ranges = url.searchParams.getAll("ranges").map((r) => r.replace(/^'|'$/g, ""));
@@ -77,6 +78,13 @@ describe("automatic party tabs", () => {
     const why = Object.fromEntries(board.config.tabDecisions.map((d: any) => [d.title, d.reason]));
     expect(why["OLD VENDOR"]).toMatch(/Existed before/);
     expect(why["Summary"]).toMatch(/Design Number/);
+
+    // a merged Status cell marks both of PRATIK's rows received
+    sheetTabs["PRATIK C-6"] = [HEADER, [serialFromYMD(2026, 10, 1), "P-1", "", 1, 1, "Received", ""], ["", "P-1b", "", 1, 1, "", ""]];
+    sheetMerges = { "PRATIK C-6": [{ startRowIndex: 1, endRowIndex: 3, startColumnIndex: 5, endColumnIndex: 6 }] };
+    board = await call(boardGet);
+    expect(board.orders.filter((o: any) => o.factory === "PRATIK C-6")).toEqual([]);
+    sheetMerges = {};
 
     // an admin switches the old vendor on
     const r = await call(tabsPost, { body: { title: "OLD VENDOR", on: true } });

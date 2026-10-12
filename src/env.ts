@@ -59,8 +59,8 @@ export interface SessionData extends Record<string, unknown> {
 // ---------------------------------------------------------------- party tabs
 
 import { decideTabs, newState, TABS_STATE_KEY, type TabDecision, type TabsState } from "./tabs";
-import { listTabs, readTabs } from "./sheets";
-import { findColumns, type Grid } from "./rules";
+import { listTabs, readMerges, readTabs } from "./sheets";
+import { fillMerges, findColumns, type Grid } from "./rules";
 
 export const BOARD_CACHE_KEY = "board:v1";
 
@@ -86,7 +86,13 @@ export async function resolvePartyTabs(env: Env): Promise<TabDecision[]> {
 export async function loadPartyTabs(env: Env): Promise<{ decisions: TabDecision[]; grids: { name: string; grid: Grid }[] }> {
   const decisions = await resolvePartyTabs(env);
   const wanted = decisions.filter((d) => d.status === "on").map((d) => d.title);
-  const grids = (await readTabs(serviceAccount(env), env.SHEET_ID, wanted)).filter((g) => findColumns(g.grid));
+  const [read, merges] = await Promise.all([
+    readTabs(serviceAccount(env), env.SHEET_ID, wanted),
+    readMerges(serviceAccount(env), env.SHEET_ID),
+  ]);
+  const grids = read
+    .filter((g) => findColumns(g.grid))
+    .map((g) => ({ name: g.name, grid: fillMerges(g.grid, merges.get(g.name) ?? []) }));
   for (const d of decisions) {
     if (d.status === "on" && !grids.some((g) => g.name === d.title)) {
       d.status = "off";

@@ -338,6 +338,35 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
   return items;
 }
 
+/**
+ * Copy the value of a merged Status / Received date / Date cell into every row it covers.
+ * In the sheet a single merged "Received" spanning a design's rows means every sub design in those rows came back,
+ * but the Sheets API returns the value only in the merge's top row. Other columns are left alone (a merged
+ * Design Number or carats cell must not be repeated).
+ */
+export function fillMerges(
+  grid: Grid,
+  merges: { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }[],
+): Grid {
+  const cols = findColumns(grid);
+  if (!cols || !merges.length) return grid;
+  const targets = [cols.status, cols.received, cols.date].filter((c): c is number => c !== undefined);
+  const out = grid.map((row) => [...(row ?? [])]);
+  for (const m of merges) {
+    for (const c of targets) {
+      if (c < m.startColumnIndex || c >= m.endColumnIndex) continue;
+      const top = out[m.startRowIndex]?.[c];
+      if (top === undefined || top === null || top === "") continue;
+      for (let r = m.startRowIndex + 1; r < m.endRowIndex && r < out.length; r++) {
+        const row = (out[r] ??= []);
+        while (row.length <= c) row.push("");
+        if (row[c] === undefined || row[c] === null || row[c] === "") row[c] = top;
+      }
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- add-ons (hidden from the board)
 
 // "ADD-ON", "ADD ON", "ADDON", "Add-on 2", "(add on)" … anywhere in the design string

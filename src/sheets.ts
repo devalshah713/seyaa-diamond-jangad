@@ -148,3 +148,32 @@ export async function listTabs(sa: ServiceAccount, sheetId: string): Promise<{ t
   const json = (await res.json()) as { sheets?: { properties: { title: string; hidden?: boolean } }[] };
   return (json.sheets ?? []).map((s) => ({ title: s.properties.title, hidden: !!s.properties.hidden }));
 }
+
+export interface MergeRange {
+  startRowIndex: number; // 0-based, inclusive
+  endRowIndex: number; // exclusive
+  startColumnIndex: number;
+  endColumnIndex: number;
+}
+
+/** Merged-cell ranges per tab title. The values API only returns a merged cell's value in its top-left cell. */
+export async function readMerges(sa: ServiceAccount, sheetId: string): Promise<Map<string, MergeRange[]>> {
+  const token = await getAccessToken(sa);
+  const qs = new URLSearchParams({ fields: "sheets.properties.title,sheets.merges" });
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${qs}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Reading merged cells failed: ${res.status} ${await res.text()}`);
+  const json = (await res.json()) as { sheets?: { properties: { title: string }; merges?: Partial<MergeRange>[] }[] };
+  return new Map(
+    (json.sheets ?? []).map((s) => [
+      s.properties.title,
+      (s.merges ?? []).map((m) => ({
+        startRowIndex: m.startRowIndex ?? 0,
+        endRowIndex: m.endRowIndex ?? 0,
+        startColumnIndex: m.startColumnIndex ?? 0,
+        endColumnIndex: m.endColumnIndex ?? 0,
+      })),
+    ]),
+  );
+}
