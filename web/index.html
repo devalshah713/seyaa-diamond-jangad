@@ -531,7 +531,10 @@ async function downloadExcel(btn) {
     const facs = [...new Set(picked.map((o) => o.factory))];
     const wb = XLSX.utils.book_new();
     for (const f of facs) XLSX.utils.book_append_sheet(wb, factorySheet(XLSX, f, picked.filter((o) => o.factory === f)), safeName(f).slice(0, 31));
-    const name = facs.length === 1 ? safeName(facs[0]) : `Pending orders - ${facs.length} factories`;
+    // e.g. "Seyaa Solitaire Pending Orders 12-Oct-2026" — the date the file is downloaded (India time)
+    const stamp = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).replace(/ /g, "-").replace("Sept", "Sep");
+    const party = facs.length === 1 ? safeName(facs[0]) : `${facs.length} Factories`;
+    const name = `${party} Pending Orders ${stamp}`;
     XLSX.writeFile(wb, name + ".xlsx", { compression: true });
   } catch (err) {
     alert(err.message);
