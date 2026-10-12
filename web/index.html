@@ -489,7 +489,7 @@ function loadXlsx() {
 }
 const toDate = (iso) => new Date(iso + "T00:00:00Z");
 /** Add-on design numbers merged into this order, e.g. "SN-RG-SL-EM-014 ADD-ON". */
-const addOnNames = (o) => (o.addOns || []).map((a) => a.design).join(", ");
+const addOnNames = (o) => (o.addOns || []).map((a) => a.design + (a.sub ? " / Sub " + a.sub : "")).join(", ");
 function factorySheet(XLSX, f, rows) {
   const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date",
     "Due Date", "Working Days", "Days Late", "Status", "Priority", "Reason for Delay", "Expected Delivery Date"];
@@ -554,7 +554,7 @@ function orderTable(rows, withAction) {
   </tr></thead><tbody>${rows.map((o, i) => `<tr class="${selected.has(keyOf(o)) ? "picked" : ""}">
     <td class="pick"><input type="checkbox" data-pick="${i}" ${selected.has(keyOf(o)) ? "checked" : ""} aria-label="Select ${esc(o.design)}"></td>
     ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
-    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="addon">↳ <b>${esc(a.design)}</b> <span class="small">add-on${a.issueDate ? " · issued " + fmtDate(a.issueDate) : ""} · row ${a.row}</span></div>`).join("")}
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="addon">↳ <b>${esc(a.design)}</b>${a.sub ? " · sub " + esc(a.sub) : ""} <span class="small">add-on${a.issueDate ? " · issued " + fmtDate(a.issueDate) : ""} · row ${a.row}</span></div>`).join("")}
       <div class="msg-btns"><button data-copy="${i}" title="Copy a follow-up message for the factory group">Copy message</button>
       <a href="${waLink(orderMessage(o))}" target="_blank" rel="noopener" title="Open WhatsApp with this message">WhatsApp</a></div></td>
     <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>

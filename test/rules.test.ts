@@ -255,6 +255,26 @@ describe("add-ons belong to the original order", () => {
     expect(main.addOns).toEqual([{ design: "SN-RG-SL-EM-014 ADD-ON", sub: "", product: "", row: 4, issueDate: "2026-10-08" }]);
   });
 
+  it("recognises an add-on marked in the Sub Design No column (design number unchanged)", () => {
+    const board = buildBoard(tab([
+      [d("2026-09-01"), "SN-RG-SL-EM-014", "014", "RING", "", "", 6, 0.6, "", "", ""],
+      [d("2026-09-18"), "SN-RG-SL-EM-014", "ADD ON 014", "RING", "", "", 6, 0.1, "", "", ""],
+      [d("2026-09-18"), "SN-BR-RD-3CT-025", "ADD ON 025", "BRACELET", "", "", 1, 0, "", "", ""],
+    ]), today);
+    expect(board.orders.map((o) => [o.design, o.sub, o.issueDate])).toEqual([["SN-RG-SL-EM-014", "014", "2026-09-01"]]);
+    expect(board.orders[0].addOns).toMatchObject([{ design: "SN-RG-SL-EM-014", sub: "ADD ON 014", issueDate: "2026-09-18" }]);
+    expect(board.exceptions.addOnOrphans.map((e) => e.design)).toEqual(["SN-BR-RD-3CT-025"]);
+  });
+
+  it("a sub-column add-on whose original was received leaves the board with it", () => {
+    const board = buildBoard(tab([
+      [d("2026-09-01"), "SN-RG-SL-EM-014", "014", "RING", "", "", 6, 0.6, "Received", d("2026-09-15"), ""],
+      [d("2026-09-18"), "SN-RG-SL-EM-014", "ADD ON 014", "RING", "", "", 6, 0.1, "", "", ""],
+    ]), today);
+    expect(board.orders).toHaveLength(0);
+    expect(board.exceptions.addOnOrphans).toHaveLength(0);
+  });
+
   it("an add-on marked Received closes the whole order", () => {
     const board = buildBoard(tab([
       [d("2026-10-01"), "SN-RG-SL-EM-014", "", "", "", "", 10, 1.5, "", "", ""],

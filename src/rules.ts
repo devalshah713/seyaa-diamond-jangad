@@ -309,6 +309,14 @@ export function isAddOn(design: string): boolean {
   return ADD_ON.test(design);
 }
 
+/**
+ * The sheet marks add-ons either in the Design Number ("SN-RG-SL-EM-014 ADD-ON") or, more often, in the
+ * Sub Design No column ("ADD ON 014") with the Design Number unchanged.
+ */
+export function isAddOnBlock(b: { design: string; sub: string }): boolean {
+  return isAddOn(b.design) || isAddOn(b.sub);
+}
+
 /** Design with any add-on marker removed, normalised for matching: "SN-RG-SL-EM-014 ADD-ON" → "SN-RG-SL-EM-014". */
 export function baseDesign(design: string): string {
   return design
@@ -330,7 +338,7 @@ export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[
   const orphans: Block[] = [];
   const latest = new Map<string, Block>(); // base design → most recent original so far
   for (const b of blocks) {
-    if (!isAddOn(b.design)) {
+    if (!isAddOnBlock(b)) {
       orders.push(b);
       latest.set(baseDesign(b.design), b);
       continue;
