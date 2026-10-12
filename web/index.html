@@ -74,6 +74,14 @@ tr:last-child td { border-bottom: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 14px 14px; font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); margin-right: 5px; vertical-align: -1px; }
 
+.fbar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; }
+.fbtn { display: grid; gap: 1px; text-align: left; min-width: 132px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel); }
+.fbtn b { font-size: 14px; white-space: nowrap; }
+.fbtn span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fbtn .late { color: var(--breach); font-weight: 600; }
+.fbtn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.fbtn[aria-pressed="true"] b { color: var(--accent); }
+.stage-table td, .stage-table th { padding: 6px 10px; }
 .exgrid { display: grid; gap: 14px; }
 .exgrid h3 { margin: 0; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) {
@@ -98,6 +106,7 @@ tr:last-child td { border-bottom: 0; }
 </header>
 <div class="wrap">
   <div id="error"></div>
+  <nav class="fbar" id="fbar" aria-label="Factory"></nav>
   <section class="band" id="band" aria-label="Buyer orders due"></section>
   <section class="kpis" id="kpis"></section>
   <nav class="tabs" role="tablist" id="tabs"></nav>
@@ -117,7 +126,18 @@ const TABS = [
 ];
 let data = null;
 let tab = safeGet("tab") || "follow";
-const q = { factory: "", tier: "", stage: "", search: "" };
+const q = { tier: "", stage: "", search: "" };
+// selected factory ("" = all): from the link (#f=…) first, else the last one used
+let factory = decodeURIComponent((location.hash.match(/f=([^&]*)/) || [])[1] || "") || safeGet("factory") || "";
+const inFactory = (x) => !factory || x.factory === factory;
+const orders = () => data.orders.filter(inFactory);
+const isLate = (o) => o.stage !== "On Track";
+function setFactory(f) {
+  factory = f;
+  safeSet("factory", f);
+  history.replaceState(null, "", f ? "#f=" + encodeURIComponent(f) : location.pathname);
+  render();
+}
 
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
@@ -152,6 +172,7 @@ async function load(refresh) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || res.statusText);
     data = json;
+    if (factory && !data.factories.some((f) => f.factory === factory)) factory = "";
     document.getElementById("error").innerHTML = "";
     render();
   } catch (e) {
@@ -173,24 +194,37 @@ function renderMeta() {
   const el = document.getElementById("meta");
   el.textContent = `Sheet read ${at.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST` +
     ` · ${ageMin <= 0 ? "just now" : ageMin + " min ago"} · today ${fmtDate(data.today)}` +
-    (data.config.cutoffDate ? ` · ignoring orders before ${fmtDate(data.config.cutoffDate)}` : "");
+    (data.config.cutoffDate ? ` · ignoring orders before ${fmtDate(data.config.cutoffDate)}` : "") +
+    (factory ? ` · showing ${factory} only` : "");
   el.className = "meta" + (ageMin > 10 ? " stale" : "");
 }
 setInterval(() => data && renderMeta(), 30000);
 
 function render() {
   renderMeta();
+  // factory bar — open and late per factory; click to filter the whole board
+  const btn = (f, label, open, late) =>
+    `<button class="fbtn" aria-pressed="${factory === f}" data-f="${esc(f)}"><b>${esc(label)}</b>` +
+    `<span>${open} open · <span class="${late ? "late" : ""}">${late} late</span></span></button>`;
+  document.getElementById("fbar").innerHTML =
+    btn("", "All factories", data.orders.length, data.orders.filter(isLate).length) +
+    data.factories.map((f) => {
+      const os = data.orders.filter((o) => o.factory === f.factory);
+      return btn(f.factory, f.factory, os.length, os.filter(isLate).length);
+    }).join("");
+  document.querySelectorAll("#fbar .fbtn").forEach((b) => b.onclick = () => setFactory(b.dataset.f));
+
   // buyer band — buyer orders at or past the due day
-  const due = data.orders.filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
+  const due = orders().filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
   document.getElementById("band").innerHTML = `<h2>Buyer orders due · ${due.length}</h2>` + (due.length
     ? `<ul>${due.map((o) => `<li>${chip(o.stage)} <b>${esc(o.design)}</b> <span>${esc(o.buyer)}</span> <span>${esc(o.factory)}</span> <span>day ${o.day}</span> <span>${cts(o.carats)} cts</span></li>`).join("")}</ul>`
     : `<div class="none">None at or past day ${data.config.buyerDue}.</div>`);
 
   // KPIs
-  const s = data.totals.byStage;
-  const sum = (...ks) => ks.reduce((a, k) => ({ count: a.count + s[k].count, carats: a.carats + s[k].carats }), { count: 0, carats: 0 });
+  const os = orders();
+  const sum = (...ks) => os.filter((o) => ks.includes(o.stage)).reduce((a, o) => ({ count: a.count + 1, carats: a.carats + o.carats }), { count: 0, carats: 0 });
   const tiles = [
-    ["Open", { count: data.totals.open, carats: data.totals.carats }, "--accent"],
+    [factory ? "Open · " + factory : "Open", sum(...STAGE_ORDER), "--accent"],
     ["On Track", sum("On Track"), "--ok"],
     ["Warning 1", sum("Warning 1"), "--w1"],
     ["Warning 2 + Final", sum("Warning 2", "Final Warning"), "--final"],
@@ -224,22 +258,22 @@ function orderTable(rows, withAction) {
 }
 
 function viewFollow() {
-  const rows = data.orders.filter((o) => o.stage !== "On Track");
-  return `<p class="small">${rows.length} orders at or past a warning step — buyer orders first, then longest overdue.</p>` + orderTable(rows, true);
+  const rows = orders().filter(isLate);
+  return `<p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — buyer orders first, then longest overdue.</p>` + orderTable(rows, true);
 }
 
 function viewQueue() {
   const opt = (vals, cur, all) => `<option value="">${all}</option>` + vals.map((x) => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
   const s = q.search.trim().toLowerCase();
-  const rows = data.orders.filter((o) =>
-    (!q.factory || o.factory === q.factory) && (!q.tier || o.tier === q.tier) && (!q.stage || o.stage === q.stage) &&
+  const all = orders();
+  const rows = all.filter((o) =>
+    (!q.tier || o.tier === q.tier) && (!q.stage || o.stage === q.stage) &&
     (!s || o.design.toLowerCase().includes(s) || o.sub.toLowerCase().includes(s)));
   return `<div class="filters">
-    <select id="f-factory">${opt(data.factories.map((f) => f.factory), q.factory, "All factories")}</select>
     <select id="f-tier">${opt(["Buyer", "Stock"], q.tier, "All priorities")}</select>
     <select id="f-stage">${opt(STAGE_ORDER, q.stage, "All stages")}</select>
     <input id="f-search" type="search" placeholder="Search design number" value="${esc(q.search)}">
-    <span class="small" style="align-self:center">${rows.length} of ${data.orders.length}</span>
+    <span class="small" style="align-self:center">${rows.length} of ${all.length} open${factory ? " at " + esc(factory) : ""}</span>
   </div>` + orderTable(rows, false);
 }
 function bindFilters() {
@@ -250,7 +284,7 @@ function bindFilters() {
       if (ev === "input") { const n = document.getElementById(id); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
     });
   };
-  on("f-factory", "factory"); on("f-tier", "tier"); on("f-stage", "stage"); on("f-search", "search", "input");
+  on("f-tier", "tier"); on("f-stage", "stage"); on("f-search", "search", "input");
 }
 
 function viewScore() {
@@ -260,7 +294,7 @@ function viewScore() {
   <div class="panel"><table><thead><tr>
     <th>Factory</th><th class="num">Closed (n)</th><th class="num">Mean TAT</th><th class="num">Median TAT</th>
     <th class="num">Open</th><th class="num">Breached</th><th class="num">Carats out</th>
-  </tr></thead><tbody>${data.factories.map((f) => {
+  </tr></thead><tbody>${data.factories.filter(inFactory).map((f) => {
     const bad = (x) => x != null && x > target ? ` style="color:var(--breach);font-weight:700"` : "";
     return `<tr><td><b>${esc(f.factory)}</b></td><td class="num">${f.tat.n}</td>
       <td class="num"${bad(f.tat.mean)}>${f.tat.mean ?? "—"}</td><td class="num"${bad(f.tat.median)}>${f.tat.median ?? "—"}</td>
@@ -269,19 +303,24 @@ function viewScore() {
 }
 
 function viewRisk() {
-  const max = Math.max(1, ...data.factories.map((f) => f.carats));
-  return `<p class="small">Open carats by factory, split by stage.</p><div class="panel"><div class="bars">${data.factories.map((f) => `
+  const fs = data.factories.filter(inFactory);
+  const max = Math.max(1, ...fs.map((f) => f.carats));
+  const detail = factory && fs[0] ? `<div class="panel" style="margin-top:14px"><table class="stage-table"><thead><tr>
+    <th>Stage</th><th class="num">Orders</th><th class="num">Carats</th></tr></thead><tbody>${STAGE_ORDER.map((st) =>
+      `<tr><td>${chip(st)}</td><td class="num">${fs[0].byStage[st].count}</td><td class="num">${cts(fs[0].byStage[st].carats)}</td></tr>`).join("")}
+    </tbody></table></div>` : "";
+  return `<p class="small">Open carats by factory, split by stage.</p><div class="panel"><div class="bars">${fs.map((f) => `
     <div class="bar-row"><b>${esc(f.factory)}</b>
       <div class="bar" style="width:${Math.max(2, (f.carats / max) * 100)}%">${STAGE_ORDER.filter((s) => f.byStage[s].carats > 0).map((s) =>
         `<span title="${s}: ${cts(f.byStage[s].carats)} cts · ${f.byStage[s].count} orders" style="--c:${cv(s)};width:${(f.byStage[s].carats / f.carats) * 100}%"></span>`).join("")}</div>
       <span class="num">${cts(f.carats)} cts</span></div>`).join("")}
-  </div><div class="legend">${STAGE_ORDER.map((s) => `<span><i style="--c:${cv(s)}"></i>${s}</span>`).join("")}</div></div>`;
+  </div><div class="legend">${STAGE_ORDER.map((s) => `<span><i style="--c:${cv(s)}"></i>${s}</span>`).join("")}</div></div>${detail}`;
 }
 
 function viewEx() {
   const e = data.exceptions;
-  const box = (title, note, items) => `<div class="panel"><h3>${title} · ${items.length}</h3>
-    <p class="small" style="padding:0 12px">${note}</p>${items.length ? `<table><thead><tr><th>Factory</th><th class="num">Row</th><th>Design</th><th>Detail</th></tr></thead><tbody>
+  const box = (title, note, items) => `<div class="panel"><h3>${title} · ${items.filter(inFactory).length}</h3>
+    <p class="small" style="padding:0 12px">${note}</p>${(items = items.filter(inFactory)).length ? `<table><thead><tr><th>Factory</th><th class="num">Row</th><th>Design</th><th>Detail</th></tr></thead><tbody>
     ${items.map((x) => `<tr><td>${esc(x.factory)}</td><td class="num">${x.row}</td><td>${esc(x.design)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">None.</div>`}</div>`;
   return `<div class="exgrid">
     ${box("Likely received", "Received date is filled but no row carries a Received status. Excluded from the open list — fix the status in the sheet.", e.likelyReceived)}
@@ -290,6 +329,11 @@ function viewEx() {
     ${e.beforeCutoff ? `<p class="small">${e.beforeCutoff} open orders issued before the cut-off are hidden.</p>` : ""}
   </div>`;
 }
+
+window.addEventListener("hashchange", () => {
+  const f = decodeURIComponent((location.hash.match(/f=([^&]*)/) || [])[1] || "");
+  if (data && f !== factory) setFactory(f);
+});
 
 load(false);
 </script>
