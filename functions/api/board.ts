@@ -3,10 +3,9 @@
 // Read-only: this never writes to the sheet.
 
 import { buildBoard, DEFAULT_CONFIG, parseDate, todaySerial, type RulesConfig } from "../../src/rules";
-import { readTabs } from "../../src/sheets";
-import { list, type Env, type SessionData } from "../../src/env";
+import { BOARD_CACHE_KEY, list, loadPartyTabs, type Env, type SessionData } from "../../src/env";
 
-const CACHE_KEY = "board:v1";
+const CACHE_KEY = BOARD_CACHE_KEY;
 
 function config(env: Env): RulesConfig {
   const int = (v: string | undefined, d: number) => (v && /^\d+$/.test(v.trim()) ? +v : d);
@@ -23,17 +22,12 @@ function config(env: Env): RulesConfig {
 
 async function computeBoard(env: Env) {
   if (!env.GOOGLE_PRIVATE_KEY) throw new Error("GOOGLE_PRIVATE_KEY secret is not set on this Pages project.");
-  const tabs = env.TABS.split(",").map((s) => s.trim()).filter(Boolean);
-  const grids = await readTabs(
-    { clientEmail: env.GOOGLE_CLIENT_EMAIL, privateKey: env.GOOGLE_PRIVATE_KEY },
-    env.SHEET_ID,
-    tabs,
-  );
+  const { decisions, grids } = await loadPartyTabs(env);
   const cfg = config(env);
   const board = buildBoard(grids, todaySerial(Date.now()), cfg);
   return {
     generatedAt: new Date().toISOString(),
-    config: { ...cfg, cutoffDate: env.CUTOFF_DATE || null, tabs },
+    config: { ...cfg, cutoffDate: env.CUTOFF_DATE || null, tabs: grids.map((g) => g.name), tabDecisions: decisions },
     ...board,
   };
 }

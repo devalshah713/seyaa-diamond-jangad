@@ -45,7 +45,7 @@ tr:last-child td { border-bottom: 0; }
 <body>
 <header>
   <div>
-    <h1>Admin · Users</h1>
+    <h1>Admin</h1>
     <div class="muted" id="who"></div>
   </div>
   <div class="actions">
@@ -76,6 +76,17 @@ tr:last-child td { border-bottom: 0; }
     <div class="table"><table>
       <thead><tr><th>Username</th><th>Full name</th><th>Role</th><th>Status</th><th>Password</th><th>Actions</th></tr></thead>
       <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel">
+    <h2>Party tabs</h2>
+    <p class="muted">Tabs in the Jangad sheet. A tab added to the sheet from now on appears on the board automatically, with every feature.
+      Tabs that already existed when automatic adding started stay off until you switch them on. Changes show on the board within a minute.</p>
+    <div class="msg" id="tabsMsg" role="status"></div>
+    <div class="table"><table>
+      <thead><tr><th>Tab</th><th>On the board</th><th>Why</th><th></th></tr></thead>
+      <tbody id="tabRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
     </table></div>
   </section>
 </div>
@@ -175,6 +186,43 @@ document.getElementById("rows").addEventListener("click", async (e) => {
     b.disabled = false;
   }
 });
+
+async function refreshTabs() {
+  try {
+    const res = await fetch("/api/admin/tabs", { cache: "no-store" });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || res.statusText);
+    document.getElementById("tabRows").innerHTML = j.tabs.map((t) => `<tr>
+      <td><b>${esc(t.title)}</b></td>
+      <td>${t.status === "on" ? '<span class="chip on">On</span>' : '<span class="chip off">Off</span>'}</td>
+      <td class="muted">${esc(t.reason)}</td>
+      <td><button data-tab="${esc(t.title)}" data-on="${t.status !== "on"}">${t.status === "on" ? "Switch off" : "Switch on"}</button></td>
+    </tr>`).join("") || '<tr><td colspan="4" class="muted">No tabs found.</td></tr>';
+  } catch (e) {
+    say("tabsMsg", e.message, false);
+  }
+}
+document.getElementById("tabRows").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (!b) return;
+  const on = b.dataset.on === "true";
+  if (!confirm(`${on ? "Show" : "Hide"} "${b.dataset.tab}" on the board?`)) return;
+  b.disabled = true;
+  try {
+    const res = await fetch("/api/admin/tabs", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: b.dataset.tab, on }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || res.statusText);
+    say("tabsMsg", j.message, true);
+    refreshTabs();
+  } catch (err) {
+    say("tabsMsg", err.message, false);
+    b.disabled = false;
+  }
+});
+refreshTabs();
 
 document.getElementById("logout").onclick = async () => {
   try { await fetch("/api/logout", { method: "POST" }); } finally { location.href = "/login"; }

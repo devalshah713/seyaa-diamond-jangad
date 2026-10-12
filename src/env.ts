@@ -55,3 +55,43 @@ export interface SessionData extends Record<string, unknown> {
   user: string;
   role: "Admin" | "Staff";
 }
+
+// ---------------------------------------------------------------- party tabs
+
+import { decideTabs, newState, TABS_STATE_KEY, type TabDecision, type TabsState } from "./tabs";
+import { listTabs, readTabs } from "./sheets";
+import { findColumns, type Grid } from "./rules";
+
+export const BOARD_CACHE_KEY = "board:v1";
+
+export async function loadTabsState(env: Env): Promise<TabsState | null> {
+  return ((await env.BOARD_CACHE?.get(TABS_STATE_KEY, "json")) as TabsState | null) ?? null;
+}
+
+/**
+ * Decide which tabs are parties. The first time this runs it records every existing tab as the
+ * baseline, so tabs present today stay off unless listed in TABS; tabs created later come on by themselves.
+ */
+export async function resolvePartyTabs(env: Env): Promise<TabDecision[]> {
+  const tabs = await listTabs(serviceAccount(env), env.SHEET_ID);
+  let state = await loadTabsState(env);
+  if (!state && env.BOARD_CACHE) {
+    state = newState(tabs, new Date().toISOString());
+    await env.BOARD_CACHE.put(TABS_STATE_KEY, JSON.stringify(state));
+  }
+  return decideTabs(tabs, list(env.TABS), state);
+}
+
+/** Party tabs with their data. A tab without a "Design Number" header is not a party and is turned off. */
+export async function loadPartyTabs(env: Env): Promise<{ decisions: TabDecision[]; grids: { name: string; grid: Grid }[] }> {
+  const decisions = await resolvePartyTabs(env);
+  const wanted = decisions.filter((d) => d.status === "on").map((d) => d.title);
+  const grids = (await readTabs(serviceAccount(env), env.SHEET_ID, wanted)).filter((g) => findColumns(g.grid));
+  for (const d of decisions) {
+    if (d.status === "on" && !grids.some((g) => g.name === d.title)) {
+      d.status = "off";
+      d.reason = "No “Design Number” column — not a party tab";
+    }
+  }
+  return { decisions, grids };
+}

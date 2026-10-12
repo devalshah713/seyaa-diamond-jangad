@@ -11,6 +11,8 @@ id = "512b15e70a9d4e3495790c709abdc832"
 
 [vars]
 SHEET_ID = "1IhNZlP3YxM8lVTboyxB2EeJkReGN86ONSHi-buNkE3I"
+# Parties always on the board. Tabs added to the sheet later are picked up automatically (any tab with a
+# "Design Number" column); tabs that already existed on first run stay off until switched on in Admin → Party tabs.
 TABS = "Seyaa Solitaire,PRATIK C-6,RAKESH BABU,RAJKUMAR,Anthem Jewels"
 STOCK_DUE = "8"
 BUYER_DUE = "5"

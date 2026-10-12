@@ -136,3 +136,15 @@ export async function updateCells(
   );
   if (!res.ok) throw new Error(`Updating the user failed: ${res.status} ${await res.text()}`);
 }
+
+/** Every tab in the spreadsheet, in sheet order. */
+export async function listTabs(sa: ServiceAccount, sheetId: string): Promise<{ title: string; hidden: boolean }[]> {
+  const token = await getAccessToken(sa);
+  const qs = new URLSearchParams({ fields: "sheets.properties.title,sheets.properties.hidden" });
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${qs}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Listing the sheet's tabs failed: ${res.status} ${await res.text()}`);
+  const json = (await res.json()) as { sheets?: { properties: { title: string; hidden?: boolean } }[] };
+  return (json.sheets ?? []).map((s) => ({ title: s.properties.title, hidden: !!s.properties.hidden }));
+}

@@ -36,11 +36,6 @@ button { cursor: pointer; }
 button:hover { border-color: var(--muted); }
 .wrap { padding: 0 16px 32px; max-width: 1280px; margin: 0 auto; }
 
-.band { background: var(--band); color: var(--band-ink); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; position: sticky; top: 0; z-index: 5; max-height: min(30vh, 220px); overflow-y: auto; }
-.band h2 { font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
-.band ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.band li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
-.band .none { opacity: .7; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; border-top: 4px solid var(--c, var(--line)); }
@@ -136,7 +131,6 @@ tr.picked td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   <div id="error"></div>
   <nav class="fbar" id="fbar" aria-label="Factory"></nav>
   <section class="dbar" id="dbar" aria-label="Issue date filter"></section>
-  <section class="band" id="band" aria-label="Buyer orders due"></section>
   <section class="kpis" id="kpis"></section>
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <main id="view"></main>
@@ -291,13 +285,6 @@ function render() {
     }).join("");
   document.querySelectorAll("#fbar .fbtn").forEach((b) => b.onclick = () => setFactory(b.dataset.f));
   renderDateBar();
-
-  // buyer band — buyer orders at or past the due day
-  const due = orders().filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
-  document.getElementById("band").hidden = tier === "Stock";
-  document.getElementById("band").innerHTML = `<h2>Buyer orders due · ${due.length}</h2>` + (due.length
-    ? `<ul>${due.map((o) => `<li>${chip(o.stage)} <b>${esc(o.design)}</b> <span>${esc(o.buyer)}</span> <span>${esc(o.factory)}</span> <span>day ${o.day}</span> <span>${cts(o.carats)} cts</span></li>`).join("")}</ul>`
-    : `<div class="none">None at or past day ${data.config.buyerDue}.</div>`);
 
   // KPIs
   const os = orders();
