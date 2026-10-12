@@ -339,7 +339,7 @@ function orderLines(o) {
     `Diamonds: ${o.pcs} pc${o.pcs === 1 ? "" : "s"} · ${cts(o.carats)} cts`,
     `Due: ${fmtDate(workingDayDate(o.issueDate, dueDay(o)))} – ${timing}`,
     o.tier === "Buyer" ? "Priority: BUYER ORDER" : "",
-    ...(o.addOns || []).map((a) => "Includes add-on: " + a.replace(/ \(row \d+(, issued [\d-]+)?\)$/, "")),
+    o.addOns?.length ? "Includes add-on: " + addOnNames(o) : "",
   ].filter(Boolean);
 }
 function orderMessage(o) {
@@ -487,12 +487,14 @@ function loadXlsx() {
   });
 }
 const toDate = (iso) => new Date(iso + "T00:00:00Z");
+/** Add-on design numbers merged into this order, e.g. "SN-RG-SL-EM-014 ADD-ON". */
+const addOnNames = (o) => (o.addOns || []).map((a) => a.replace(/ \(row \d+(, issued [\d-]+)?\)$/, "")).join(", ");
 function factorySheet(XLSX, f, rows) {
-  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Issue Date",
+  const head = ["Sr No", "Design Number", "Sub Design No", "Product", "Add-on", "Issue Date",
     "Due Date", "Working Days", "Days Late", "Status", "Priority", "Reason for Delay", "Expected Delivery Date"];
   const body = rows.map((o, i) => {
     const late = o.day - dueDay(o);
-    return [i + 1, o.design, o.sub, o.product, toDate(o.issueDate),
+    return [i + 1, o.design, o.sub, o.product, addOnNames(o), toDate(o.issueDate),
       toDate(workingDayDate(o.issueDate, dueDay(o))), o.day, late > 0 ? late : 0, o.stage, o.tier === "Buyer" ? "BUYER ORDER" : "Stock", "", ""];
   });
   const aoa = [
@@ -506,9 +508,9 @@ function factorySheet(XLSX, f, rows) {
     const c = ws[ref];
     if (c && c.t === "d") c.z = "dd-mmm-yyyy";
   }
-  ws["!cols"] = [6, 26, 14, 14, 13, 13, 12, 10, 14, 13, 30, 20].map((w) => ({ wch: w }));
-  ws["!autofilter"] = { ref: `A4:L${4 + body.length}` };
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }];
+  ws["!cols"] = [6, 26, 14, 14, 28, 13, 13, 12, 10, 14, 13, 30, 20].map((w) => ({ wch: w }));
+  ws["!autofilter"] = { ref: `A4:M${4 + body.length}` };
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } }];
   return ws;
 }
 const safeName = (s) => s.replace(/[\\/:*?"<>|\[\]]/g, " ").trim();
