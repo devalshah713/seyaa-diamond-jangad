@@ -82,6 +82,11 @@ tr:last-child td { border-bottom: 0; }
 .fbtn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .fbtn[aria-pressed="true"] b { color: var(--accent); }
 .stage-table td, .stage-table th { padding: 6px 10px; }
+.msg-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.msg-btns button, .msg-btns a { font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); text-decoration: none; cursor: pointer; }
+.msg-btns button.done { border-color: var(--ok); color: var(--ok); }
+.bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.bulk p { margin: 0; }
 .exgrid { display: grid; gap: 14px; }
 .exgrid h3 { margin: 0; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) {
@@ -243,14 +248,88 @@ function render() {
   if (tab === "queue") bindFilters();
 }
 
+// ---- follow-up messages for the factory group
+const SUNDAY = 0;
+/** Date of working day n (Mon–Sat; day 1 = issue date, or the Monday after a Sunday issue). */
+function workingDayDate(issueIso, n) {
+  const d = new Date(issueIso + "T00:00:00Z");
+  if (d.getUTCDay() === SUNDAY) d.setUTCDate(d.getUTCDate() + 1);
+  for (let k = 1; k < n; ) { d.setUTCDate(d.getUTCDate() + 1); if (d.getUTCDay() !== SUNDAY) k++; }
+  return d.toISOString().slice(0, 10);
+}
+const dueDay = (o) => (o.tier === "Buyer" ? data.config.buyerDue : data.config.stockDue);
+const URGENCY = {
+  "Warning 1": "Reminder", "Warning 2": "Second reminder", "Final Warning": "FINAL REMINDER",
+  "Breach": "URGENT – OVERDUE", "Due Today": "BUYER ORDER – DUE TODAY", "Critical": "URGENT – BUYER ORDER OVERDUE",
+  "On Track": "Status check",
+};
+function orderLines(o) {
+  const late = o.day - dueDay(o);
+  const timing = late > 0 ? `${late} working day${late === 1 ? "" : "s"} late (day ${o.day}; target ${dueDay(o)} days)`
+    : late === 0 ? `due today (day ${o.day} of ${dueDay(o)})`
+    : `day ${o.day} of ${dueDay(o)}`;
+  return [
+    `Design: ${o.design}${o.sub ? " / Sub " + o.sub : ""}${o.product ? " (" + o.product + ")" : ""}`,
+    `Issued: ${fmtDate(o.issueDate)}${o.memo ? " · Memo " + o.memo : ""}`,
+    `Diamonds: ${o.pcs} pc${o.pcs === 1 ? "" : "s"} · ${cts(o.carats)} cts`,
+    `Due: ${fmtDate(workingDayDate(o.issueDate, dueDay(o)))} – ${timing}`,
+    o.tier === "Buyer" ? "Priority: BUYER ORDER" : "",
+  ].filter(Boolean);
+}
+function orderMessage(o) {
+  return [
+    `*${URGENCY[o.stage]} – ${o.factory}*`,
+    "",
+    ...orderLines(o),
+    "",
+    ...(o.day > dueDay(o)
+      ? ["Please reply with:", "1. Reason for the delay", "2. Exact delivery date"]
+      : ["Please confirm it will be delivered on the due date, or tell us the reason and new date if not."]),
+  ].join("\n");
+}
+function factoryMessage(f, rows) {
+  return [
+    `*Pending delivery follow-up – ${f}*`,
+    `${rows.length} order${rows.length === 1 ? "" : "s"} needing follow-up, as of ${fmtDate(data.today)}:`,
+    "",
+    ...rows.flatMap((o, i) => [`${i + 1}. ${URGENCY[o.stage]}`, ...orderLines(o).map((l) => "   " + l), ""]),
+    "Please reply for EACH design with:",
+    "1. Reason for the delay",
+    "2. Exact delivery date",
+  ].join("\n");
+}
+async function copyText(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = document.createElement("textarea");
+    t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+  const label = btn.textContent;
+  btn.textContent = "Copied ✓"; btn.classList.add("done");
+  setTimeout(() => { btn.textContent = label; btn.classList.remove("done"); }, 1800);
+}
+const waLink = (text) => "https://wa.me/?text=" + encodeURIComponent(text);
+let shown = []; // rows in the current table, for the message buttons
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  const v = b.dataset.copy;
+  copyText(v === "all" ? factoryMessage(factory, shown.filter(isLate)) : orderMessage(shown[+v]), b);
+});
+
 function orderTable(rows, withAction) {
+  shown = rows;
   if (!rows.length) return `<div class="panel"><div class="empty">Nothing here.</div></div>`;
   return `<div class="panel"><table><thead><tr>
     <th class="num">Day</th><th>Stage</th>${withAction ? "<th>Action</th>" : ""}<th>Design</th><th>Factory</th>
     <th>Priority</th><th class="hide-sm">Issued</th><th class="num">Cts</th><th class="num hide-sm">Pcs</th><th class="hide-sm">Memo</th>
-  </tr></thead><tbody>${rows.map((o) => `<tr>
+  </tr></thead><tbody>${rows.map((o, i) => `<tr>
     ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
-    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}</td>
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}
+      <div class="msg-btns"><button data-copy="${i}" title="Copy a follow-up message for the factory group">Copy message</button>
+      <a href="${waLink(orderMessage(o))}" target="_blank" rel="noopener" title="Open WhatsApp with this message">WhatsApp</a></div></td>
     <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>
     <td class="${o.tier === "Buyer" ? "tier-buyer" : ""}">${o.tier === "Buyer" ? "Buyer · " + esc(o.buyer) : "Stock"}</td>
     <td class="hide-sm">${fmtDate(o.issueDate)}</td><td class="num">${cts(o.carats)}</td><td class="num hide-sm">${o.pcs}</td><td class="hide-sm">${esc(o.memo)}</td>
@@ -259,7 +338,11 @@ function orderTable(rows, withAction) {
 
 function viewFollow() {
   const rows = orders().filter(isLate);
-  return `<p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — buyer orders first, then longest overdue.</p>` + orderTable(rows, true);
+  const bulk = factory && rows.length
+    ? `<div class="msg-btns"><button data-copy="all">Copy all ${rows.length} for ${esc(factory)}</button>
+       <a href="${waLink(factoryMessage(factory, rows))}" target="_blank" rel="noopener">WhatsApp all</a></div>`
+    : `<span class="small">Pick a factory above to copy one message covering all its late orders.</span>`;
+  return `<div class="bulk"><p class="small">${rows.length} orders${factory ? " at " + esc(factory) : ""} at or past a warning step — buyer orders first, then longest overdue.</p>${bulk}</div>` + orderTable(rows, true);
 }
 
 function viewQueue() {
