@@ -339,6 +339,7 @@ function orderLines(o) {
     `Diamonds: ${o.pcs} pc${o.pcs === 1 ? "" : "s"} · ${cts(o.carats)} cts`,
     `Due: ${fmtDate(workingDayDate(o.issueDate, dueDay(o)))} – ${timing}`,
     o.tier === "Buyer" ? "Priority: BUYER ORDER" : "",
+    ...(o.addOns || []).map((a) => "Includes add-on: " + a.replace(/ \(row \d+(, issued [\d-]+)?\)$/, "")),
   ].filter(Boolean);
 }
 function orderMessage(o) {
@@ -546,7 +547,7 @@ function orderTable(rows, withAction) {
   </tr></thead><tbody>${rows.map((o, i) => `<tr class="${selected.has(keyOf(o)) ? "picked" : ""}">
     <td class="pick"><input type="checkbox" data-pick="${i}" ${selected.has(keyOf(o)) ? "checked" : ""} aria-label="Select ${esc(o.design)}"></td>
     ${dayCell(o)}<td>${chip(o.stage)}</td>${withAction ? `<td>${esc(o.action)}</td>` : ""}
-    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}
+    <td><b>${esc(o.design)}</b>${o.sub ? `<div class="small">sub ${esc(o.sub)}</div>` : ""}${o.product ? `<div class="small">${esc(o.product)}</div>` : ""}${(o.addOns || []).map((a) => `<div class="small">+ add-on: ${esc(a)}</div>`).join("")}
       <div class="msg-btns"><button data-copy="${i}" title="Copy a follow-up message for the factory group">Copy message</button>
       <a href="${waLink(orderMessage(o))}" target="_blank" rel="noopener" title="Open WhatsApp with this message">WhatsApp</a></div></td>
     <td>${esc(o.factory)}<div class="small">row ${o.row}</div></td>
@@ -631,6 +632,7 @@ function viewEx() {
   return `<div class="exgrid">
     ${box("Likely received", "Received date is filled but no row carries a Received status. Excluded from the open list — fix the status in the sheet.", e.likelyReceived)}
     ${box("No issue date", "No usable date on the block, so no clock can run. Excluded from the open list.", e.noDate)}
+    ${box("Add-on without original", "Design marked as an add-on, but no earlier order with the same design number on that tab. It is not on the open list — check the design number in the sheet.", e.addOnOrphans || [])}
     ${box("Odd status", data.config.knownStatuses.length ? "Status value outside the dropdown." : "Check disabled — set KNOWN_STATUSES to the dropdown values.", e.oddStatus)}
     ${e.beforeCutoff ? `<p class="small">${e.beforeCutoff} open orders issued before the cut-off are hidden.</p>` : ""}
   </div>`;

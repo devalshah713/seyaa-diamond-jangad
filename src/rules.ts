@@ -249,6 +249,7 @@ export interface Block {
   statuses: { row: number; value: string }[];
   pcs: number;
   carats: number;
+  addOns: { row: number; design: string; issue: number | null }[]; // add-on blocks merged into this order
 }
 
 /** One order = one design block: a row with a Design Number plus every following row without one. */
@@ -277,6 +278,7 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
         statuses: [],
         pcs: 0,
         carats: 0,
+        addOns: [],
       };
       blocks.push(cur);
     }
@@ -298,6 +300,58 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
   return blocks;
 }
 
+// ---------------------------------------------------------------- add-ons
+
+// "ADD-ON", "ADD ON", "ADDON", "Add-on 2", "(add on)" … anywhere in the design string
+const ADD_ON = /\(?\badd[\s\-_.]*on\b\)?[\s\-_.#]*\d*\)?/i;
+
+export function isAddOn(design: string): boolean {
+  return ADD_ON.test(design);
+}
+
+/** Design with any add-on marker removed, normalised for matching: "SN-RG-SL-EM-014 ADD-ON" → "SN-RG-SL-EM-014". */
+export function baseDesign(design: string): string {
+  return design
+    .replace(ADD_ON, " ")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[-_.]{2,}/g, "-")
+    .replace(/^[-_.]+|[-_.]+$/g, "");
+}
+
+/**
+ * Add-on diamonds belong to the ORIGINAL order and must not start a new clock.
+ * Each add-on block is merged into the closest earlier block on the same tab with the same base design:
+ * its rows' pieces, carats and statuses join the original, which keeps its own issue date.
+ * Add-ons with no earlier original are returned as orphans.
+ */
+export function mergeAddOns(blocks: Block[]): { orders: Block[]; orphans: Block[] } {
+  const orders: Block[] = [];
+  const orphans: Block[] = [];
+  const latest = new Map<string, Block>(); // base design → most recent original so far
+  for (const b of blocks) {
+    if (!isAddOn(b.design)) {
+      orders.push(b);
+      latest.set(baseDesign(b.design), b);
+      continue;
+    }
+    const main = latest.get(baseDesign(b.design));
+    if (!main) {
+      orphans.push(b);
+      continue;
+    }
+    main.addOns.push({ row: b.row, design: b.design, issue: b.issue });
+    main.rowCount += b.rowCount;
+    main.pcs += b.pcs;
+    main.carats += b.carats;
+    main.statuses.push(...b.statuses);
+    if (main.received === null) main.received = b.received;
+    if (!main.buyer) main.buyer = b.buyer;
+    if (main.issue === null) main.issue = b.issue;
+  }
+  return { orders, orphans };
+}
+
 // ---------------------------------------------------------------- the board
 
 export interface Order {
@@ -316,6 +370,7 @@ export interface Order {
   pcs: number;
   carats: number;
   statuses: string[];
+  addOns: string[]; // e.g. "SN-RG-SL-EM-014 ADD-ON (row 4400, issued 2026-10-03)"
 }
 
 export interface ExceptionItem {
@@ -348,6 +403,7 @@ export interface Board {
     likelyReceived: ExceptionItem[];
     noDate: ExceptionItem[];
     oddStatus: ExceptionItem[];
+    addOnOrphans: ExceptionItem[];
     beforeCutoff: number;
   };
 }
@@ -379,7 +435,7 @@ export function buildBoard(
 ): Board {
   const known = new Set(c.knownStatuses.map(foldStatus));
   const orders: Order[] = [];
-  const ex: Board["exceptions"] = { likelyReceived: [], noDate: [], oddStatus: [], beforeCutoff: 0 };
+  const ex: Board["exceptions"] = { likelyReceived: [], noDate: [], oddStatus: [], addOnOrphans: [], beforeCutoff: 0 };
   const factories: FactorySummary[] = [];
 
   for (const { name, grid } of tabs) {
@@ -394,7 +450,12 @@ export function buildBoard(
     factories.push(fs);
     const tats: number[] = [];
 
-    for (const b of toBlocks(name, grid)) {
+    const { orders: blocks, orphans } = mergeAddOns(toBlocks(name, grid));
+    for (const o of orphans) {
+      if (o.statuses.some((st) => isClosingStatus(st.value, c))) continue; // already received — nothing to chase
+      ex.addOnOrphans.push({ factory: name, row: o.row, design: o.design, detail: "add-on with no earlier original order on this tab" });
+    }
+    for (const b of blocks) {
       const ref = { factory: name, row: b.row, design: b.design };
 
       if (known.size) {
@@ -450,6 +511,7 @@ export function buildBoard(
         pcs: b.pcs,
         carats: Math.round(b.carats * 1000) / 1000,
         statuses: b.statuses.map((s) => s.value),
+        addOns: b.addOns.map((a) => `${a.design} (row ${a.row}${a.issue !== null ? ", issued " + serialToISO(a.issue) : ""})`),
       });
       fs.open++;
       fs.carats += b.carats;

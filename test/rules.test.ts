@@ -226,3 +226,49 @@ describe.skipIf(!existsSync(FIXTURE))("§4 baseline, 11 Oct 2026", () => {
     expect(f("Anthem Jewels").tat).toEqual({ n: 7, mean: 131.4, median: 129 });
   });
 });
+
+describe("add-ons belong to the original order", () => {
+  it("recognises the add-on spellings and strips them", async () => {
+    const { isAddOn, baseDesign } = await import("../src/rules");
+    for (const d of ["SN-RG-SL-EM-014 ADD-ON", "SN-RG-SL-EM-014 add on", "SN-RG-SL-EM-014-ADDON", "SN-RG-SL-EM-014 (Add-On 2)", "SN-RG-SL-EM-014 ADD ON-1"]) {
+      expect(isAddOn(d), d).toBe(true);
+      expect(baseDesign(d), d).toBe("SN-RG-SL-EM-014");
+    }
+    expect(isAddOn("SN-RG-SL-EM-014")).toBe(false);
+    expect(isAddOn("SN-PADDON-01")).toBe(false);
+    expect(baseDesign(" sn-rg-sl-em-014 ")).toBe("SN-RG-SL-EM-014");
+  });
+
+  const today = d("2026-10-12");
+  const tab = (rows: Grid) => [{ name: "Seyaa Solitaire", grid: [HEADER, ...rows] }];
+
+  it("merges an add-on into the original: one order, original clock, summed diamonds", () => {
+    const board = buildBoard(tab([
+      [d("2026-10-01"), "SN-RG-SL-EM-014", "", "", "", "", 10, 1.5, "", "", "M1"],
+      [d("2026-10-02"), "SN-OTHER-001", "", "", "", "", 1, 0.2, "", "", ""],
+      [d("2026-10-08"), "SN-RG-SL-EM-014 ADD-ON", "", "", "", "", 4, 0.5, "", "", ""],
+      ["", "", "", "", "", "", 2, 0.25, "", "", ""],
+    ]), today);
+    expect(board.orders.map((o) => o.design).sort()).toEqual(["SN-OTHER-001", "SN-RG-SL-EM-014"]);
+    const main = board.orders.find((o) => o.design === "SN-RG-SL-EM-014")!;
+    expect(main).toMatchObject({ issueDate: "2026-10-01", pcs: 16, carats: 2.25, day: workingDayNumber(d("2026-10-01"), today) });
+    expect(main.addOns).toEqual(["SN-RG-SL-EM-014 ADD-ON (row 4, issued 2026-10-08)"]);
+  });
+
+  it("an add-on marked Received closes the whole order", () => {
+    const board = buildBoard(tab([
+      [d("2026-10-01"), "SN-RG-SL-EM-014", "", "", "", "", 10, 1.5, "", "", ""],
+      [d("2026-10-08"), "SN-RG-SL-EM-014 ADD ON", "", "", "", "", 4, 0.5, "Received", d("2026-10-10"), ""],
+    ]), today);
+    expect(board.orders).toHaveLength(0);
+  });
+
+  it("an add-on with no earlier original is flagged, not given its own clock", () => {
+    const board = buildBoard(tab([
+      [d("2026-10-08"), "SN-RG-SL-EM-099 ADD-ON", "", "", "", "", 4, 0.5, "", "", ""],
+      [d("2026-10-09"), "SN-RG-SL-EM-099", "", "", "", "", 4, 0.5, "", "", ""],
+    ]), today);
+    expect(board.orders.map((o) => o.design)).toEqual(["SN-RG-SL-EM-099"]);
+    expect(board.exceptions.addOnOrphans.map((e) => e.design)).toEqual(["SN-RG-SL-EM-099 ADD-ON"]);
+  });
+});
