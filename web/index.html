@@ -88,6 +88,13 @@ tr:last-child td { border-bottom: 0; }
 .dbar .quick button { font-size: 13px; padding: 5px 9px; }
 .dbar .quick button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .dbar .oldest { flex-basis: 100%; font-size: 13px; }
+.dbar .types { flex-basis: 100%; display: inline-flex; flex-wrap: wrap; gap: 0; }
+.dbar .types button { border-radius: 0; margin-left: -1px; padding: 7px 14px; font-weight: 600; }
+.dbar .types button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.dbar .types button:last-child { border-radius: 0 8px 8px 0; }
+.dbar .types button span { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.dbar .types button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; position: relative; }
+.dbar .types button[aria-pressed="true"] span { color: #fff; }
 .dbar .oldest b { color: var(--breach); }
 td.pick, th.pick { width: 34px; padding-right: 0; }
 .pick input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
@@ -149,7 +156,7 @@ const TABS = [
 ];
 let data = null;
 let tab = safeGet("tab") || "follow";
-const q = { tier: "", stage: "", search: "" };
+const q = { stage: "", search: "" };
 // selected factory ("" = all): from the link (#f=…) first, else the last one used
 // Filters live in the link (#f=PRATIK%20C-6&from=2026-09-01&to=2026-09-30) so a view can be shared.
 // The factory is also remembered between visits; dates and sort are not.
@@ -158,27 +165,36 @@ let factory = hp.has("f") ? hp.get("f") : safeGet("factory") || "";
 let dfrom = hp.get("from") || "";
 let dto = hp.get("to") || "";
 let sortBy = safeGet("sort") || "priority";
+let tier = { buyer: "Buyer", stock: "Stock" }[hp.get("t")] || ""; // "" = all, "Buyer" = Buyer Name filled, "Stock" = empty
 const inFactory = (x) => !factory || x.factory === factory;
 const inDates = (o) => (!dfrom || o.issueDate >= dfrom) && (!dto || o.issueDate <= dto); // ISO dates compare as text
+const inTier = (o) => !tier || o.tier === tier;
+const inRange = (o) => inDates(o) && inTier(o); // date + order-type filters
 const SORTS = {
   priority: [(a, b) => 0, "Buyer first, most overdue"], // server order
   oldest: [(a, b) => a.issueDate.localeCompare(b.issueDate) || b.day - a.day, "Oldest issued first"],
   newest: [(a, b) => b.issueDate.localeCompare(a.issueDate), "Newest issued first"],
   carats: [(a, b) => b.carats - a.carats, "Most carats first"],
 };
-const orders = () => data.orders.filter((o) => inFactory(o) && inDates(o)).sort(SORTS[sortBy][0]);
+const orders = () => data.orders.filter((o) => inFactory(o) && inRange(o)).sort(SORTS[sortBy][0]);
 const isLate = (o) => o.stage !== "On Track";
 function syncHash() {
   const p = new URLSearchParams();
   if (factory) p.set("f", factory);
   if (dfrom) p.set("from", dfrom);
   if (dto) p.set("to", dto);
+  if (tier) p.set("t", tier.toLowerCase());
   const h = p.toString();
   history.replaceState(null, "", h ? "#" + h : location.pathname);
 }
 function setFactory(f) {
   factory = f;
   safeSet("factory", f);
+  syncHash();
+  render();
+}
+function setTier(t) {
+  tier = t;
   syncHash();
   render();
 }
@@ -255,6 +271,7 @@ function renderMeta() {
     ` · ${ageMin <= 0 ? "just now" : ageMin + " min ago"} · today ${fmtDate(data.today)}` +
     (data.config.cutoffDate ? ` · ignoring orders before ${fmtDate(data.config.cutoffDate)}` : "") +
     (factory ? ` · showing ${factory} only` : "") +
+    (tier ? ` · ${tier.toLowerCase()} orders only` : "") +
     (dfrom || dto ? ` · issued ${dfrom ? fmtDate(dfrom) : "start"} → ${dto ? fmtDate(dto) : "today"}` : "");
   el.className = "meta" + (ageMin > 10 ? " stale" : "");
 }
@@ -267,9 +284,9 @@ function render() {
     `<button class="fbtn" aria-pressed="${factory === f}" data-f="${esc(f)}"><b>${esc(label)}</b>` +
     `<span>${open} open · <span class="${late ? "late" : ""}">${late} late</span></span></button>`;
   document.getElementById("fbar").innerHTML =
-    btn("", "All factories", data.orders.filter(inDates).length, data.orders.filter((o) => inDates(o) && isLate(o)).length) +
+    btn("", "All factories", data.orders.filter(inRange).length, data.orders.filter((o) => inRange(o) && isLate(o)).length) +
     data.factories.map((f) => {
-      const os = data.orders.filter((o) => o.factory === f.factory && inDates(o));
+      const os = data.orders.filter((o) => o.factory === f.factory && inRange(o));
       return btn(f.factory, f.factory, os.length, os.filter(isLate).length);
     }).join("");
   document.querySelectorAll("#fbar .fbtn").forEach((b) => b.onclick = () => setFactory(b.dataset.f));
@@ -277,6 +294,7 @@ function render() {
 
   // buyer band — buyer orders at or past the due day
   const due = orders().filter((o) => o.tier === "Buyer" && o.stage !== "On Track");
+  document.getElementById("band").hidden = tier === "Stock";
   document.getElementById("band").innerHTML = `<h2>Buyer orders due · ${due.length}</h2>` + (due.length
     ? `<ul>${due.map((o) => `<li>${chip(o.stage)} <b>${esc(o.design)}</b> <span>${esc(o.buyer)}</span> <span>${esc(o.factory)}</span> <span>day ${o.day}</span> <span>${cts(o.carats)} cts</span></li>`).join("")}</ul>`
     : `<div class="none">None at or past day ${data.config.buyerDue}.</div>`);
@@ -391,12 +409,15 @@ function renderDateBar() {
     ["Older than 30 days", "", ago(31)],
     ["Older than 90 days", "", ago(91)],
   ];
-  const pending = data.orders.filter((o) => inFactory(o) && inDates(o));
+  const pending = data.orders.filter((o) => inFactory(o) && inRange(o));
   const oldest = pending.reduce((a, o) => (!a || o.issueDate < a.issueDate ? o : a), null);
+  const typeCount = (t) => data.orders.filter((o) => inFactory(o) && inDates(o) && (!t || o.tier === t)).length;
   document.getElementById("dbar").innerHTML = `
+    <div class="types" role="group" aria-label="Order type">${[["", "All orders"], ["Buyer", "Buyer orders"], ["Stock", "Stock orders"]].map(([t, l]) =>
+      `<button data-tier="${t}" aria-pressed="${tier === t}">${l} <span>${typeCount(t)}</span></button>`).join("")}</div>
     <label>Issued in month
       <select id="d-month"><option value="">All months</option>${months.map((m) =>
-        `<option value="${m}" ${m === curMonth ? "selected" : ""}>${monthLabel(m)} (${data.orders.filter((o) => inFactory(o) && o.issueDate.startsWith(m)).length})</option>`).join("")}</select>
+        `<option value="${m}" ${m === curMonth ? "selected" : ""}>${monthLabel(m)} (${data.orders.filter((o) => inFactory(o) && inTier(o) && o.issueDate.startsWith(m)).length})</option>`).join("")}</select>
     </label>
     <label>From <input type="date" id="d-from" value="${dfrom}" max="${data.today}"></label>
     <label>To <input type="date" id="d-to" value="${dto}" max="${data.today}"></label>
@@ -414,11 +435,12 @@ function renderDateBar() {
   document.getElementById("d-to").onchange = (e) => setDates(dfrom, e.target.value);
   document.getElementById("d-sort").onchange = (e) => { sortBy = e.target.value; safeSet("sort", sortBy); render(); };
   document.querySelectorAll("#dbar .quick button").forEach((b) => b.onclick = () => setDates(b.dataset.from, b.dataset.to));
+  document.querySelectorAll("#dbar .types button").forEach((b) => b.onclick = () => setTier(b.dataset.tier));
 }
 
 /** Per-factory open / breached / carats / stages from the orders currently in view. */
 function factoryStats(f) {
-  const os = data.orders.filter((o) => o.factory === f.factory && inDates(o));
+  const os = data.orders.filter((o) => o.factory === f.factory && inRange(o));
   const byStage = Object.fromEntries(STAGE_ORDER.map((st) => [st, { count: 0, carats: 0 }]));
   for (const o of os) { byStage[o.stage].count++; byStage[o.stage].carats += o.carats; }
   return {
@@ -554,10 +576,9 @@ function viewQueue() {
   const s = q.search.trim().toLowerCase();
   const all = orders();
   const rows = all.filter((o) =>
-    (!q.tier || o.tier === q.tier) && (!q.stage || o.stage === q.stage) &&
+    (!q.stage || o.stage === q.stage) &&
     (!s || o.design.toLowerCase().includes(s) || o.sub.toLowerCase().includes(s)));
   return `<div class="filters">
-    <select id="f-tier">${opt(["Buyer", "Stock"], q.tier, "All priorities")}</select>
     <select id="f-stage">${opt(STAGE_ORDER, q.stage, "All stages")}</select>
     <input id="f-search" type="search" placeholder="Search design number" value="${esc(q.search)}">
     <span class="small" style="align-self:center">${rows.length} of ${all.length} open${factory ? " at " + esc(factory) : ""}</span>
@@ -571,7 +592,7 @@ function bindFilters() {
       if (ev === "input") { const n = document.getElementById(id); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
     });
   };
-  on("f-tier", "tier"); on("f-stage", "stage"); on("f-search", "search", "input");
+  on("f-stage", "stage"); on("f-search", "search", "input");
 }
 
 function viewScore() {
@@ -620,6 +641,7 @@ function viewEx() {
 window.addEventListener("hashchange", () => {
   const p = new URLSearchParams(location.hash.slice(1));
   factory = p.get("f") || ""; dfrom = p.get("from") || ""; dto = p.get("to") || "";
+  tier = { buyer: "Buyer", stock: "Stock" }[p.get("t")] || "";
   if (data) render();
 });
 
