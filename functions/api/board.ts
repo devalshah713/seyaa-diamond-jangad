@@ -2,7 +2,7 @@
 // Everything else on the site is the static UI in /web.
 // Read-only: this never writes to the sheet.
 
-import { buildBoard, DEFAULT_CONFIG, parseDate, todaySerial, type RulesConfig } from "../../src/rules";
+import { buildBoard, DEFAULT_CONFIG, parseDate, RATE_HEADER_OVERRIDE, todaySerial, type RulesConfig } from "../../src/rules";
 import { BOARD_CACHE_KEY, list, loadPartyTabs, type Env, type SessionData } from "../../src/env";
 
 const CACHE_KEY = BOARD_CACHE_KEY;
@@ -22,6 +22,7 @@ function config(env: Env): RulesConfig {
 
 async function computeBoard(env: Env) {
   if (!env.GOOGLE_PRIVATE_KEY) throw new Error("GOOGLE_PRIVATE_KEY secret is not set on this Pages project.");
+  RATE_HEADER_OVERRIDE.value = env.RATE_HEADER ?? "";
   const { decisions, grids } = await loadPartyTabs(env);
   const cfg = config(env);
   const board = buildBoard(grids, todaySerial(Date.now()), cfg);
@@ -32,9 +33,20 @@ async function computeBoard(env: Env) {
   };
 }
 
-/** The cached payload is shared; the viewer's name is added per request. */
-const withUser = (body: string, s: SessionData) =>
-  `{"user":${JSON.stringify(s.user)},"role":${JSON.stringify(s.role)},${body.slice(1)}`;
+/**
+ * The cached payload is shared; the viewer's name is added per request.
+ * Prices are for admins only: staff get the board without value / priced-carat figures.
+ */
+function withUser(body: string, s: SessionData): string {
+  let payload = body;
+  if (s.role !== "Admin") {
+    const b = JSON.parse(body);
+    for (const o of b.orders) { delete o.value; delete o.pricedCarats; }
+    for (const f of b.factories) delete f.priceColumn;
+    payload = JSON.stringify(b);
+  }
+  return `{"user":${JSON.stringify(s.user)},"role":${JSON.stringify(s.role)},${payload.slice(1)}`;
+}
 
 export const onRequestGet: PagesFunction<Env, string, SessionData> = async ({ request, env, data }) => {
   const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };

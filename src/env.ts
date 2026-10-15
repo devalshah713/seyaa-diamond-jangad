@@ -13,6 +13,7 @@ export interface Env {
   CUTOFF_DATE?: string;
   KNOWN_STATUSES?: string;
   CACHE_SECONDS?: string;
+  RATE_HEADER?: string; // optional exact heading of the per-carat price column
   GOOGLE_CLIENT_EMAIL: string;
   GOOGLE_PRIVATE_KEY: string; // secret
   // login

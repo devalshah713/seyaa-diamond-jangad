@@ -318,3 +318,34 @@ describe("merged Status / Received cells", () => {
     expect(filled.slice(1).map((r) => r[5])).toEqual([1, 1, 1, 1]);
   });
 });
+
+describe("pending value (per-carat price)", () => {
+  const today = d("2026-10-15");
+  const H = ["Date", "Design Number", "Sub Design No", "Diamond Pcs", "Diamond Carats", "Rate", "Status"];
+  const grid: Grid = [
+    H,
+    [d("2026-10-01"), "SN-1", "54", 10, 2, 40000, ""], // 80,000
+    ["", "", "", 5, 0.5, "₹ 60,000", ""], // 30,000 (another diamond size, own price, text with ₹)
+    ["", "", "55", 4, 1, "", ""], // no price
+    ["", "", "56", 4, 3, 50000, "Received"], // received — not pending
+  ];
+  const board = buildBoard([{ name: "Seyaa Solitaire", grid }], today);
+
+  it("multiplies each row's carats by its own price", () => {
+    const s54 = board.orders.find((o) => o.sub === "54")!;
+    expect(s54).toMatchObject({ carats: 2.5, value: 110000, pricedCarats: 2.5 });
+    const s55 = board.orders.find((o) => o.sub === "55")!;
+    expect(s55).toMatchObject({ carats: 1, value: 0, pricedCarats: 0 });
+    expect(board.factories[0].priceColumn).toBe("Rate");
+  });
+
+  it("finds the price column under common names", async () => {
+    const { rateColumn } = await import("../src/rules");
+    expect(rateColumn(["Date", "Per Carat Price"])).toBe(1);
+    expect(rateColumn(["Date", "Price/Ct"])).toBe(1);
+    expect(rateColumn(["Date", "RATE (PER CT)"])).toBe(1);
+    expect(rateColumn(["Total Price", "Diamond Rate"])).toBe(1);
+    expect(rateColumn(["Date", "Total Amount"])).toBe(-1);
+    expect(rateColumn(["Date", "Cost", "Price"], "Cost")).toBe(1);
+  });
+});

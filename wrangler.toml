@@ -22,6 +22,7 @@ RETURN_RECEIVED_CLOSES_ORDER = "true"   # SPEC §3 open decision
 CUTOFF_DATE = ""                         # yyyy-mm-dd; orders issued before this are ignored
 KNOWN_STATUSES = ""                      # the Status dropdown values, comma-separated; enables the "odd status" check
 CACHE_SECONDS = "60"
+RATE_HEADER = ""                         # optional: exact heading of the per-carat price column (else Rate / Price / Price per Ct … are found automatically)
 GOOGLE_CLIENT_EMAIL = "jangad-board@vibrant-sound-511310-m3.iam.gserviceaccount.com"
 
 # Login — users live in a Google Sheet owned by devalshah713@gmail.com, shared with the service account as EDITOR

@@ -56,6 +56,7 @@ Already done: code, `wrangler.toml`, KV namespace `jangad-board-cache`, service 
 | `CUTOFF_DATE` | empty | `yyyy-mm-dd`; hide orders issued before it |
 | `KNOWN_STATUSES` | empty | Status dropdown values; enables the "odd status" exception |
 | `CACHE_SECONDS` | 60 | KV minimum is 60 |
+| `RATE_HEADER` | empty | exact heading of the per-carat price column; empty = found automatically (Rate, Price, Price/Ct …) |
 
 ## Unverified choices (check against Code.gs or the §4 baseline)
 

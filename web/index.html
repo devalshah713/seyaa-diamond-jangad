@@ -105,6 +105,17 @@ tr.picked td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .msg-btns button.done { border-color: var(--ok); color: var(--ok); }
 .bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .bulk p { margin: 0; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--ink); }
+tr.sel td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.print-title { display: none; }
+@media print {
+  header, .fbar, .dbar, .kpis, .tabs, .selbar, .report-actions, #error { display: none !important; }
+  body { background: #fff; color: #000; }
+  .panel { border: 0; }
+  .print-title { display: block; margin: 0 0 10px; }
+  .print-title h2 { margin: 0; font-size: 18px; }
+}
 .exgrid { display: grid; gap: 14px; }
 .exgrid h3 { margin: 0; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) {
@@ -146,7 +157,7 @@ const STAGE_ORDER = ["Critical", "Due Today", "Breach", "Final Warning", "Warnin
 const SOLID = new Set(["Breach", "Critical"]);
 const TABS = [
   ["follow", "Follow-Up Today"], ["queue", "All Pending Orders"], ["score", "Factory Scorecard"],
-  ["risk", "Carats at Risk"], ["ex", "Exceptions"],
+  ["risk", "Carats at Risk"], ["value", "Pending Value"], ["ex", "Exceptions"],
 ];
 let data = null;
 let tab = safeGet("tab") || "follow";
@@ -301,13 +312,14 @@ function render() {
     `<div class="kpi" style="--c:var(${c})"><div class="l">${l}</div><div class="n">${v.count}</div><div class="c">${cts(v.carats)} cts</div></div>`).join("");
 
   const count = { follow: followRows().length, queue: orders().length };
-  document.getElementById("tabs").innerHTML = TABS.map(([k, l]) =>
+  if (tab === "value" && data.role !== "Admin") tab = "follow";
+  document.getElementById("tabs").innerHTML = TABS.filter(([k]) => k !== "value" || data.role === "Admin").map(([k, l]) =>
     `<button role="tab" aria-selected="${k === tab}" data-k="${k}">${l}${k in count ? ` <span class="small">(${count[k]})</span>` : ""}</button>`).join("");
   document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.k; safeSet("tab", tab); render(); });
 
   const v = document.getElementById("view");
   shown = [];
-  v.innerHTML = { follow: viewFollow, queue: viewQueue, score: viewScore, risk: viewRisk, ex: viewEx }[tab]();
+  v.innerHTML = { follow: viewFollow, queue: viewQueue, score: viewScore, risk: viewRisk, value: viewValue, ex: viewEx }[tab]();
   v.querySelectorAll("input[data-some]").forEach((x) => (x.indeterminate = true));
   renderSelBar();
   if (tab === "queue") bindFilters();
@@ -622,6 +634,86 @@ function viewRisk() {
       <span class="num">${cts(f.carats)} cts</span></div>`).join("")}
   </div><div class="legend">${STAGE_ORDER.map((s) => `<span><i style="--c:${cv(s)}"></i>${s}</span>`).join("")}</div></div>${detail}`;
 }
+
+// ---- pending carats & value (admins only)
+const inr = (n) => "₹ " + Math.round(n).toLocaleString("en-IN");
+function valueRows() {
+  // all factories (the factory buttons don't narrow this report); date range and order type do apply
+  const rows = data.factories.map((f) => {
+    const os = data.orders.filter((o) => o.factory === f.factory && inRange(o));
+    const sum = (k) => os.reduce((a, o) => a + (o[k] || 0), 0);
+    return { factory: f.factory, priceColumn: f.priceColumn, orders: os.length, carats: sum("carats"), priced: sum("pricedCarats"), value: sum("value") };
+  });
+  const total = rows.reduce((t, r) => ({ factory: "TOTAL – all factories", orders: t.orders + r.orders, carats: t.carats + r.carats,
+    priced: t.priced + r.priced, value: t.value + r.value }), { orders: 0, carats: 0, priced: 0, value: 0 });
+  return { rows, total };
+}
+const avgRate = (r) => (r.priced > 0 ? r.value / r.priced : null);
+function filterNote() {
+  return [tier ? tier + " orders only" : "all orders", dfrom || dto ? `issued ${dfrom ? fmtDate(dfrom) : "start"} → ${dto ? fmtDate(dto) : "today"}` : "all issue dates"].join(" · ");
+}
+function viewValue() {
+  const { rows, total } = valueRows();
+  const line = (r, cls = "") => `<tr class="${cls}">
+    <td><b>${esc(r.factory)}</b>${r.priceColumn === null ? '<div class="small" style="color:var(--breach)">price column not found on this tab</div>' : ""}</td>
+    <td class="num">${r.orders}</td><td class="num">${cts(r.carats)}</td><td class="num">${cts(r.priced)}</td>
+    <td class="num">${inr(r.value)}</td><td class="num">${avgRate(r) === null ? "—" : inr(avgRate(r))}</td></tr>`;
+  const missing = total.carats - total.priced;
+  return `<div class="report-actions"><p class="small">Pending (not yet received) carats and value per factory · ${filterNote()}.
+      Value = each diamond row's carats × its per-carat price; average = value ÷ priced carats.</p>
+    <span class="msg-btns"><button data-report="xlsx">⬇ Download Excel</button><button data-report="print">🖨 Print / Save as PDF</button></span></div>
+  <div class="print-title"><h2>Pending carats &amp; value by factory</h2><p class="small">As of ${fmtDate(data.today)} · ${filterNote()}</p></div>
+  <div class="panel"><table><thead><tr>
+    <th>Factory</th><th class="num">Pending orders</th><th class="num">Pending carats</th><th class="num">Carats with price</th>
+    <th class="num">Pending value</th><th class="num">Avg price / ct</th></tr></thead>
+    <tbody>${rows.map((r) => line(r, r.factory === factory ? "sel" : "")).join("")}${line(total, "total")}</tbody></table></div>
+  ${missing > 0.0005 ? `<p class="small">${cts(missing)} pending carats have no per-carat price in the sheet, so they count in carats but not in value or average.</p>` : ""}`;
+}
+async function downloadValueExcel(btn) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Preparing…";
+  try {
+    const XLSX = await loadXlsx();
+    const { rows, total } = valueRows();
+    const r3 = (n) => Math.round(n * 1000) / 1000;
+    const summary = [
+      ["Pending carats & value by factory"],
+      [`As of ${fmtDate(data.today)} · ${filterNote()}`],
+      [],
+      ["Factory", "Pending Orders", "Pending Carats", "Carats with Price", "Pending Value (₹)", "Avg Price per Ct (₹)"],
+      ...[...rows, total].map((r) => [r.factory, r.orders, r3(r.carats), r3(r.priced), Math.round(r.value), avgRate(r) === null ? "" : Math.round(avgRate(r))]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(summary);
+    ws["!cols"] = [26, 15, 15, 17, 20, 20].map((w) => ({ wch: w }));
+    for (const ref of Object.keys(ws)) {
+      const m = ref.match(/^([C-F])(\d+)$/);
+      if (!m || +m[2] < 5 || ws[ref].t !== "n") continue;
+      ws[ref].z = m[1] === "C" || m[1] === "D" ? "#,##0.000" : "#,##0";
+    }
+    const detail = [["Factory", "Design Number", "Sub Design No", "Product", "Issue Date", "Pending Carats", "Avg Price per Ct (₹)", "Pending Value (₹)", "Status"],
+      ...data.orders.filter(inRange).map((o) => [o.factory, o.design, o.sub, o.product, toDate(o.issueDate), r3(o.carats),
+        o.pricedCarats > 0 ? Math.round(o.value / o.pricedCarats) : "", Math.round(o.value || 0), o.stage])];
+    const wd = XLSX.utils.aoa_to_sheet(detail, { cellDates: true });
+    for (const ref of Object.keys(wd)) if (wd[ref].t === "d") wd[ref].z = "dd-mmm-yyyy";
+    wd["!cols"] = [18, 26, 14, 14, 13, 14, 18, 18, 14].map((w) => ({ wch: w }));
+    wd["!autofilter"] = { ref: `A1:I${detail.length}` };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Summary");
+    XLSX.utils.book_append_sheet(wb, wd, "Pending orders");
+    const stamp = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).replace(/ /g, "-").replace("Sept", "Sep");
+    XLSX.writeFile(wb, `Pending Carats and Value ${stamp}.xlsx`, { compression: true });
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-report]");
+  if (!b) return;
+  if (b.dataset.report === "print") window.print();
+  if (b.dataset.report === "xlsx") downloadValueExcel(b);
+});
 
 function viewEx() {
   const e = data.exceptions;

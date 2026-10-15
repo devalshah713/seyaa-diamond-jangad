@@ -187,7 +187,8 @@ type Field =
   | "received"
   | "memo"
   | "pcs"
-  | "carats";
+  | "carats"
+  | "rate";
 
 const HEADERS: Record<Field, string[]> = {
   date: ["date"],
@@ -200,7 +201,27 @@ const HEADERS: Record<Field, string[]> = {
   memo: ["memo no.", "memo no"],
   pcs: ["diamond pcs"],
   carats: ["diamond carats"],
+  rate: [], // per-carat price — matched by rateColumn() below
 };
+
+/**
+ * The per-carat price column. Exact names first ("Rate", "Price", "Per Carat Price", "Price/Ct", "Rate Per Ct" …,
+ * compared on letters only), then any header containing "rate" or "price" that is not a total/amount/difference.
+ */
+export function rateColumn(headerRow: Cell[], override = ""): number {
+  const letters = (v: Cell) => norm(v).replace(/[^a-z]/g, "");
+  const cells = headerRow.map(letters);
+  if (override) {
+    const i = cells.indexOf(letters(override));
+    if (i >= 0) return i;
+  }
+  const exact = ["rate", "price", "percaratprice", "pricepercarat", "priceperct", "pricepercts", "pricect", "pricects",
+    "ratepercarat", "rateperct", "ratepercts", "ratect", "ratects", "perctrate", "percaratrate", "perctprice",
+    "diamondrate", "diamondprice", "ctprice", "ctrate", "caratprice", "caratrate"];
+  const hit = cells.findIndex((h) => exact.includes(h));
+  if (hit >= 0) return hit;
+  return cells.findIndex((h) => /rate|price/.test(h) && !/total|amount|value|diff|sell|return|net/.test(h));
+}
 
 function norm(v: Cell): string {
   return v == null ? "" : String(v).trim().toLowerCase().replace(/\s+/g, " ");
@@ -210,11 +231,21 @@ function text(v: Cell): string {
   return v == null ? "" : String(v).trim();
 }
 
+/** Numbers that may carry currency signs or text: "₹ 45,000", "45000/-", "Rs.45000" → 45000. */
+function money(v: Cell): number {
+  if (typeof v === "number") return v;
+  const n = parseFloat(text(v).replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 function num(v: Cell): number {
   if (typeof v === "number") return v;
   const n = parseFloat(text(v).replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
+
+/** Optional exact header for the per-carat price column (from the RATE_HEADER setting). */
+export const RATE_HEADER_OVERRIDE = { value: "" };
 
 export type ColumnMap = Partial<Record<Field, number>> & { headerRow: number };
 
@@ -224,6 +255,8 @@ export function findColumns(grid: Grid): ColumnMap | null {
     const row = grid[r] ?? [];
     if (!row.some((c) => norm(c) === "design number")) continue;
     const map: ColumnMap = { headerRow: r };
+    const rate = rateColumn(row, RATE_HEADER_OVERRIDE.value);
+    if (rate >= 0) map.rate = rate;
     row.forEach((c, i) => {
       const h = norm(c);
       for (const f of Object.keys(HEADERS) as Field[]) {
@@ -249,6 +282,8 @@ export interface Block {
   statuses: { row: number; value: string }[];
   pcs: number;
   carats: number;
+  value: number; // Σ carats × per-carat price over the rows that have a price
+  pricedCarats: number; // carats on rows that have a price
 }
 
 /**
@@ -294,6 +329,8 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
       statuses: [],
       pcs: 0,
       carats: 0,
+      value: 0,
+      pricedCarats: 0,
     };
     items.push(it);
     group.push(it);
@@ -332,7 +369,13 @@ export function toBlocks(factory: string, grid: Grid): Block[] {
     const st = text(get(row, "status"));
     if (st) cur.statuses.push({ row: r + 1, value: st });
     cur.pcs += num(get(row, "pcs"));
-    cur.carats += num(get(row, "carats"));
+    const cts = num(get(row, "carats"));
+    cur.carats += cts;
+    const rate = money(get(row, "rate"));
+    if (rate > 0 && cts > 0) {
+      cur.value += cts * rate; // each diamond size row has its own price
+      cur.pricedCarats += cts;
+    }
   }
   fillDown();
   return items;
@@ -411,6 +454,8 @@ export interface Order {
   action: string;
   pcs: number;
   carats: number;
+  value: number; // pending value: Σ carats × per-carat price
+  pricedCarats: number; // carats that had a price
   statuses: string[];
 }
 
@@ -428,6 +473,7 @@ export interface FactorySummary {
   breached: number;
   byStage: Record<Stage, { count: number; carats: number }>;
   tat: { n: number; mean: number | null; median: number | null };
+  priceColumn: string | null; // heading of the per-carat price column on this tab, if found
 }
 
 export interface Board {
@@ -486,7 +532,10 @@ export function buildBoard(
       breached: 0,
       byStage: emptyStages(),
       tat: { n: 0, mean: null, median: null },
+      priceColumn: null,
     };
+    const cols = findColumns(grid);
+    if (cols?.rate !== undefined) fs.priceColumn = String(grid[cols.headerRow]?.[cols.rate] ?? "").trim() || null;
     factories.push(fs);
     const tats: number[] = [];
 
@@ -547,6 +596,8 @@ export function buildBoard(
         action: ACTION_TEXT[stage],
         pcs: b.pcs,
         carats: Math.round(b.carats * 1000) / 1000,
+        value: Math.round(b.value * 100) / 100,
+        pricedCarats: Math.round(b.pricedCarats * 1000) / 1000,
         statuses: b.statuses.map((s) => s.value),
       });
       fs.open++;
